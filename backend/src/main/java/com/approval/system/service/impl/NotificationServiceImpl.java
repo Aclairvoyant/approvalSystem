@@ -5,6 +5,7 @@ import com.approval.system.common.enums.NotifyTypeEnum;
 import com.approval.system.common.utils.SmsUtils;
 import com.approval.system.entity.Notification;
 import com.approval.system.mapper.NotificationMapper;
+import com.approval.system.service.IEmailService;
 import com.approval.system.service.INotificationService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -23,13 +24,25 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
     @Autowired
     private SmsUtils smsUtils;
 
+    @Autowired
+    private IEmailService emailService;
 
     @Override
     @Async
     public void sendSmsNotification(Long applicationId, Long userId, String phone, String title, String content) {
         try {
-            Notification notification = createNotification(applicationId, userId, NotifyTypeEnum.SMS.getCode(), title, content);
-            notification.setPhone(phone);
+            // 创建通知并直接包含 phone
+            Notification notification = Notification.builder()
+                    .applicationId(applicationId)
+                    .notifyUserId(userId)
+                    .notifyType(NotifyTypeEnum.SMS.getCode())
+                    .notifyTitle(title)
+                    .notifyContent(content)
+                    .phone(phone)
+                    .sendStatus(1) // 1=待发送
+                    .createdAt(LocalDateTime.now())
+                    .build();
+            this.save(notification);
 
             boolean success = smsUtils.sendSms(phone, title, content);
 
@@ -51,18 +64,28 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
     @Async
     public void sendEmailNotification(Long applicationId, Long userId, String email, String title, String content) {
         try {
-            Notification notification = createNotification(applicationId, userId, NotifyTypeEnum.EMAIL.getCode(), title, content);
-            notification.setEmail(email);
+            // 创建通知并直接包含 email
+            Notification notification = Notification.builder()
+                    .applicationId(applicationId)
+                    .notifyUserId(userId)
+                    .notifyType(NotifyTypeEnum.EMAIL.getCode())
+                    .notifyTitle(title)
+                    .notifyContent(content)
+                    .email(email)
+                    .sendStatus(1) // 1=待发送
+                    .createdAt(LocalDateTime.now())
+                    .build();
+            this.save(notification);
 
-            // boolean success = emailUtils.sendEmail(email, title, content);
+            boolean success = emailService.sendEmail(email, title, content);
 
-//            if (success) {
-//                notification.setSendStatus(2); // 已发送
-//                notification.setSentAt(LocalDateTime.now());
-//            } else {
-//                notification.setSendStatus(3); // 发送失败
-//                notification.setSendError("邮件发送失败");
-//            }
+            if (success) {
+                notification.setSendStatus(2); // 已发送
+                notification.setSentAt(LocalDateTime.now());
+            } else {
+                notification.setSendStatus(3); // 发送失败
+                notification.setSendError("邮件发送失败");
+            }
 
             this.updateById(notification);
         } catch (Exception e) {
@@ -80,14 +103,20 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
 
         notifications.forEach(notification -> {
             try {
+                boolean success = false;
                 if (notification.getNotifyType().equals(NotifyTypeEnum.SMS.getCode())) {
-                    smsUtils.sendSms(notification.getPhone(), notification.getNotifyTitle(), notification.getNotifyContent());
+                    success = smsUtils.sendSms(notification.getPhone(), notification.getNotifyTitle(), notification.getNotifyContent());
                 } else if (notification.getNotifyType().equals(NotifyTypeEnum.EMAIL.getCode())) {
-                    //emailUtils.sendEmail(notification.getEmail(), notification.getNotifyTitle(), notification.getNotifyContent());
+                    success = emailService.sendEmail(notification.getEmail(), notification.getNotifyTitle(), notification.getNotifyContent());
                 }
 
-                notification.setSendStatus(2);
-                notification.setSentAt(LocalDateTime.now());
+                if (success) {
+                    notification.setSendStatus(2); // 已发送
+                    notification.setSentAt(LocalDateTime.now());
+                } else {
+                    notification.setSendStatus(3); // 发送失败
+                    notification.setSendError("通知发送失败");
+                }
                 this.updateById(notification);
             } catch (Exception e) {
                 log.error("处理待发送通知失败，notificationId: {}", notification.getId(), e);
@@ -99,14 +128,37 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
     }
 
     @Override
-    public Notification createNotification(Long applicationId, Long userId, Integer notifyType, String title, String content) {
+    public Notification createNotification(Long applicationId, Long userId, Integer notifyType, String title, String content, String phone, String email) {
         Notification notification = Notification.builder()
                 .applicationId(applicationId)
                 .notifyUserId(userId)
                 .notifyType(notifyType)
                 .notifyTitle(title)
                 .notifyContent(content)
+                .phone(phone)
+                .email(email)
                 .sendStatus(1) // 1=待发送
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        this.save(notification);
+        return notification;
+    }
+
+    @Override
+    public Notification createSentNotification(Long applicationId, Long userId, Integer notifyType,
+                                              String title, String content, String phone, String email, boolean success) {
+        Notification notification = Notification.builder()
+                .applicationId(applicationId)
+                .notifyUserId(userId)
+                .notifyType(notifyType)
+                .notifyTitle(title)
+                .notifyContent(content)
+                .phone(phone)
+                .email(email)
+                .sendStatus(success ? 2 : 3) // 2=已发送, 3=发送失败
+                .sentAt(success ? LocalDateTime.now() : null)
+                .sendError(success ? null : "发送失败")
                 .createdAt(LocalDateTime.now())
                 .build();
 

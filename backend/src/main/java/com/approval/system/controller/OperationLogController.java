@@ -37,8 +37,10 @@ public class OperationLogController {
 
             List<OperationLogDTO> dtoList = page.getRecords().stream()
                     .map(log -> {
-                        String operatorName = userService.getUserById(log.getOperatorId()).getRealName();
-                        return OperationLogDTO.fromEntity(log, operatorName);
+                        var user = userService.getUserById(log.getOperatorId());
+                        String operatorName = user != null ? user.getRealName() : "未知用户";
+                        String operatorAvatar = user != null ? user.getAvatar() : null;
+                        return OperationLogDTO.fromEntity(log, operatorName, operatorAvatar);
                     })
                     .collect(Collectors.toList());
 

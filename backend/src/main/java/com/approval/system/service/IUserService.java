@@ -33,6 +33,16 @@ public interface IUserService extends IService<User> {
     User findByPhone(String phone);
 
     /**
+     * 根据手机号查找用户（管理员用）
+     */
+    User getUserByPhone(String phone);
+
+    /**
+     * 根据邮箱查找用户（管理员用）
+     */
+    User getUserByEmail(String email);
+
+    /**
      * 更新用户信息
      */
     boolean updateUserInfo(Long id, String realName, String email, String avatar);

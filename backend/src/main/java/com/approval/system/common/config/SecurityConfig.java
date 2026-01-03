@@ -45,7 +45,7 @@ public class SecurityConfig {
                         // ✅ 允许 OPTIONS 预检请求
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         // ✅ 允许公开路由 - 只允许登录和注册
-                        .requestMatchers("/api/auth/login", "/api/auth/register").permitAll()
+                        .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/send-email-code").permitAll()
                         .requestMatchers("/api/health").permitAll()
                         // ✅ 允许 OpenAPI/Swagger 文档
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html").permitAll()

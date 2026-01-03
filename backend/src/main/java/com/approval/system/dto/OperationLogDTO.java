@@ -17,6 +17,7 @@ public class OperationLogDTO {
     private Long applicationId;
     private Long operatorId;
     private String operatorName;
+    private String operatorAvatar;
     private Integer operationType;
     private String operationTypeDesc;
     private Integer oldStatus;
@@ -27,13 +28,15 @@ public class OperationLogDTO {
     private LocalDateTime createdAt;
 
     public static OperationLogDTO fromEntity(com.approval.system.entity.OperationLog log,
-                                            String operatorName) {
+                                            String operatorName,
+                                            String operatorAvatar) {
         OperationTypeEnum opType = OperationTypeEnum.getByCode(log.getOperationType());
         return OperationLogDTO.builder()
                 .id(log.getId())
                 .applicationId(log.getApplicationId())
                 .operatorId(log.getOperatorId())
                 .operatorName(operatorName)
+                .operatorAvatar(operatorAvatar)
                 .operationType(log.getOperationType())
                 .operationTypeDesc(opType != null ? opType.getDesc() : "未知")
                 .oldStatus(log.getOldStatus())

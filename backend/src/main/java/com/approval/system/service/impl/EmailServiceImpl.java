@@ -82,7 +82,7 @@ public class EmailServiceImpl implements IEmailService {
                 sendRecordCache.put(email, System.currentTimeMillis());
             }
 
-            log.info("邮箱验证码发送成功，邮箱: {}", email);
+            log.info("邮箱验证码发送成功，邮箱: {}，验证码：{}", email, code);
             return true;
         } catch (Exception e) {
             log.error("邮箱验证码发送失败，邮箱: {}", email, e);
@@ -152,6 +152,57 @@ public class EmailServiceImpl implements IEmailService {
         long elapsedSeconds = (currentTime - lastSendTime) / 1000;
 
         return elapsedSeconds >= RATE_LIMIT_SECONDS;
+    }
+
+    @Override
+    public boolean sendEmail(String email, String title, String content) {
+        try {
+            // 发送邮件
+            MailAccount account = createMailAccount();
+            MailUtil.send(account, email, title, content, true);
+
+            log.info("邮件发送成功，邮箱: {}, 标题: {}", email, title);
+            return true;
+        } catch (Exception e) {
+            log.error("邮件发送失败，邮箱: {}, 标题: {}", email, title, e);
+            return false;
+        }
+    }
+
+    @Override
+    public boolean sendApprovalNotification(String email, String applicantName, String approverName,
+                                           String title, String approvalDetail, Long applicationId) {
+        try {
+            String content = buildApprovalNotificationEmail(applicantName, approverName, title, approvalDetail, applicationId);
+
+            // 发送邮件
+            MailAccount account = createMailAccount();
+            MailUtil.send(account, email, "【审批管理系统】申请已批准 - " + title, content, true);
+
+            log.info("批准通知邮件发送成功，邮箱: {}, 申请ID: {}", email, applicationId);
+            return true;
+        } catch (Exception e) {
+            log.error("批准通知邮件发送失败，邮箱: {}, 申请ID: {}", email, applicationId, e);
+            return false;
+        }
+    }
+
+    @Override
+    public boolean sendRejectionNotification(String email, String applicantName, String approverName,
+                                             String title, String rejectReason, Long applicationId) {
+        try {
+            String content = buildRejectionNotificationEmail(applicantName, approverName, title, rejectReason, applicationId);
+
+            // 发送邮件
+            MailAccount account = createMailAccount();
+            MailUtil.send(account, email, "【审批管理系统】申请已驳回 - " + title, content, true);
+
+            log.info("驳回通知邮件发送成功，邮箱: {}, 申请ID: {}", email, applicationId);
+            return true;
+        } catch (Exception e) {
+            log.error("驳回通知邮件发送失败，邮箱: {}, 申请ID: {}", email, applicationId, e);
+            return false;
+        }
     }
 
     /**
@@ -248,6 +299,130 @@ public class EmailServiceImpl implements IEmailService {
                 "<div class=\"info-value\">#" + applicationId + "</div>" +
                 "</div>" +
                 "<p style=\"margin-top: 20px;\">请登录系统查看详情并及时处理。</p>" +
+                "</div>" +
+                "<div class=\"footer\">" +
+                "<p>此邮件由系统自动发送，请勿回复。</p>" +
+                "<p>&copy; 2025 审批管理系统</p>" +
+                "</div>" +
+                "</div>" +
+                "</body>" +
+                "</html>";
+    }
+
+    /**
+     * 构建批准通知邮件内容
+     */
+    private String buildApprovalNotificationEmail(String applicantName, String approverName,
+                                                  String title, String approvalDetail, Long applicationId) {
+        String detail = approvalDetail != null && !approvalDetail.isEmpty() ? approvalDetail : "无";
+        return "<!DOCTYPE html>" +
+                "<html>" +
+                "<head>" +
+                "<meta charset=\"UTF-8\">" +
+                "<style>" +
+                "body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }" +
+                ".container { max-width: 600px; margin: 0 auto; padding: 20px; }" +
+                ".header { background: linear-gradient(135deg, #00b42a 0%, #00b42a 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }" +
+                ".content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }" +
+                ".status-badge { display: inline-block; background: #00b42a; color: white; padding: 8px 20px; border-radius: 20px; font-weight: 600; margin: 10px 0; }" +
+                ".info-box { background: white; border-left: 4px solid #00b42a; padding: 15px; margin: 15px 0; border-radius: 4px; }" +
+                ".info-label { color: #999; font-size: 14px; margin-bottom: 5px; }" +
+                ".info-value { color: #333; font-size: 16px; font-weight: 500; }" +
+                ".stamp { width: 120px; height: 120px; border: 4px solid #00b42a; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 20px auto; transform: rotate(-15deg); opacity: 0.9; }" +
+                ".stamp-text { font-size: 24px; font-weight: 900; color: #00b42a; letter-spacing: 4px; }" +
+                ".footer { text-align: center; padding: 20px; color: #999; font-size: 12px; }" +
+                "</style>" +
+                "</head>" +
+                "<body>" +
+                "<div class=\"container\">" +
+                "<div class=\"header\">" +
+                "<h1>✓ 申请已批准</h1>" +
+                "</div>" +
+                "<div class=\"content\">" +
+                "<p>您好，" + applicantName + "！</p>" +
+                "<p>恭喜您，您提交的申请已获得批准。</p>" +
+                "<div class=\"stamp\">" +
+                "<div class=\"stamp-text\">已批准</div>" +
+                "</div>" +
+                "<div class=\"info-box\">" +
+                "<div class=\"info-label\">申请标题</div>" +
+                "<div class=\"info-value\">" + title + "</div>" +
+                "</div>" +
+                "<div class=\"info-box\">" +
+                "<div class=\"info-label\">申请编号</div>" +
+                "<div class=\"info-value\">#" + applicationId + "</div>" +
+                "</div>" +
+                "<div class=\"info-box\">" +
+                "<div class=\"info-label\">审批人</div>" +
+                "<div class=\"info-value\">" + approverName + "</div>" +
+                "</div>" +
+                "<div class=\"info-box\">" +
+                "<div class=\"info-label\">审批意见</div>" +
+                "<div class=\"info-value\">" + detail + "</div>" +
+                "</div>" +
+                "<p style=\"margin-top: 20px;\">请登录系统查看详细信息。</p>" +
+                "</div>" +
+                "<div class=\"footer\">" +
+                "<p>此邮件由系统自动发送，请勿回复。</p>" +
+                "<p>&copy; 2025 审批管理系统</p>" +
+                "</div>" +
+                "</div>" +
+                "</body>" +
+                "</html>";
+    }
+
+    /**
+     * 构建驳回通知邮件内容
+     */
+    private String buildRejectionNotificationEmail(String applicantName, String approverName,
+                                                   String title, String rejectReason, Long applicationId) {
+        String reason = rejectReason != null && !rejectReason.isEmpty() ? rejectReason : "无";
+        return "<!DOCTYPE html>" +
+                "<html>" +
+                "<head>" +
+                "<meta charset=\"UTF-8\">" +
+                "<style>" +
+                "body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }" +
+                ".container { max-width: 600px; margin: 0 auto; padding: 20px; }" +
+                ".header { background: linear-gradient(135deg, #f53f3f 0%, #f53f3f 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }" +
+                ".content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }" +
+                ".status-badge { display: inline-block; background: #f53f3f; color: white; padding: 8px 20px; border-radius: 20px; font-weight: 600; margin: 10px 0; }" +
+                ".info-box { background: white; border-left: 4px solid #f53f3f; padding: 15px; margin: 15px 0; border-radius: 4px; }" +
+                ".info-label { color: #999; font-size: 14px; margin-bottom: 5px; }" +
+                ".info-value { color: #333; font-size: 16px; font-weight: 500; }" +
+                ".stamp { width: 120px; height: 120px; border: 4px solid #f53f3f; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 20px auto; transform: rotate(-15deg); opacity: 0.9; }" +
+                ".stamp-text { font-size: 24px; font-weight: 900; color: #f53f3f; letter-spacing: 4px; }" +
+                ".footer { text-align: center; padding: 20px; color: #999; font-size: 12px; }" +
+                "</style>" +
+                "</head>" +
+                "<body>" +
+                "<div class=\"container\">" +
+                "<div class=\"header\">" +
+                "<h1>✗ 申请已驳回</h1>" +
+                "</div>" +
+                "<div class=\"content\">" +
+                "<p>您好，" + applicantName + "！</p>" +
+                "<p>很遗憾，您提交的申请未能通过审批。</p>" +
+                "<div class=\"stamp\">" +
+                "<div class=\"stamp-text\">已驳回</div>" +
+                "</div>" +
+                "<div class=\"info-box\">" +
+                "<div class=\"info-label\">申请标题</div>" +
+                "<div class=\"info-value\">" + title + "</div>" +
+                "</div>" +
+                "<div class=\"info-box\">" +
+                "<div class=\"info-label\">申请编号</div>" +
+                "<div class=\"info-value\">#" + applicationId + "</div>" +
+                "</div>" +
+                "<div class=\"info-box\">" +
+                "<div class=\"info-label\">审批人</div>" +
+                "<div class=\"info-value\">" + approverName + "</div>" +
+                "</div>" +
+                "<div class=\"info-box\">" +
+                "<div class=\"info-label\">驳回原因</div>" +
+                "<div class=\"info-value\">" + reason + "</div>" +
+                "</div>" +
+                "<p style=\"margin-top: 20px;\">如有疑问，请联系审批人了解详情。</p>" +
                 "</div>" +
                 "<div class=\"footer\">" +
                 "<p>此邮件由系统自动发送，请勿回复。</p>" +

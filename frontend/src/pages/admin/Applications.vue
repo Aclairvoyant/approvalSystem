@@ -31,9 +31,29 @@
         {{ formatDate(record.createdAt) }}
       </template>
       <template #actions="{ record }">
-        <a-button type="text" size="small" @click="viewDetail(record)">
-          查看详情
-        </a-button>
+        <a-space>
+          <a-button type="text" size="small" @click="viewDetail(record)">
+            查看详情
+          </a-button>
+          <a-button
+            v-if="record.status === 1"
+            type="text"
+            size="small"
+            status="success"
+            @click="approveApplication(record)"
+          >
+            批准
+          </a-button>
+          <a-button
+            v-if="record.status === 1"
+            type="text"
+            size="small"
+            status="danger"
+            @click="rejectApplication(record)"
+          >
+            驳回
+          </a-button>
+        </a-space>
       </template>
     </a-table>
 
@@ -56,6 +76,49 @@
         <a-descriptions-item label="更新时间">{{ formatDate(currentApplication.updatedAt) }}</a-descriptions-item>
       </a-descriptions>
     </a-modal>
+
+    <!-- 批准弹窗 -->
+    <a-modal
+      v-model:visible="approveModalVisible"
+      title="批准申请"
+      @ok="handleApprove"
+      :ok-loading="approving"
+    >
+      <a-form :model="approvalForm">
+        <a-form-item label="申请标题">
+          <a-input :value="currentApplication?.title" disabled />
+        </a-form-item>
+        <a-form-item label="审批意见">
+          <a-textarea
+            v-model="approvalForm.approvalDetail"
+            placeholder="请输入审批意见（可选）"
+            :rows="4"
+          />
+        </a-form-item>
+      </a-form>
+    </a-modal>
+
+    <!-- 驳回弹窗 -->
+    <a-modal
+      v-model:visible="rejectModalVisible"
+      title="驳回申请"
+      @ok="handleReject"
+      :ok-loading="rejecting"
+      ok-text="确认驳回"
+    >
+      <a-form :model="rejectForm">
+        <a-form-item label="申请标题">
+          <a-input :value="currentApplication?.title" disabled />
+        </a-form-item>
+        <a-form-item label="驳回原因">
+          <a-textarea
+            v-model="rejectForm.rejectReason"
+            placeholder="请输入驳回原因（可选）"
+            :rows="4"
+          />
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
@@ -67,9 +130,21 @@ import { IconRefresh } from '@arco-design/web-vue/es/icon'
 
 const applications = ref<Application[]>([])
 const loading = ref(false)
+const approving = ref(false)
+const rejecting = ref(false)
 const statusFilter = ref<number | undefined>(undefined)
 const detailVisible = ref(false)
+const approveModalVisible = ref(false)
+const rejectModalVisible = ref(false)
 const currentApplication = ref<Application | null>(null)
+
+const approvalForm = ref({
+  approvalDetail: ''
+})
+
+const rejectForm = ref({
+  rejectReason: ''
+})
 
 const pagination = ref({
   current: 1,
@@ -79,13 +154,13 @@ const pagination = ref({
 
 const columns = [
   { title: '申请ID', dataIndex: 'id', width: 80 },
-  { title: '事项标题', dataIndex: 'title', ellipsis: true },
+  { title: '事项标题', dataIndex: 'title', ellipsis: true, width: 200 },
   { title: '事项描述', dataIndex: 'description', ellipsis: true },
   { title: '申请人ID', dataIndex: 'applicantId', width: 100 },
   { title: '审批人ID', dataIndex: 'approverId', width: 100 },
   { title: '状态', slotName: 'status', width: 100 },
   { title: '申请时间', slotName: 'createdAt', width: 160 },
-  { title: '操作', slotName: 'actions', width: 100 }
+  { title: '操作', slotName: 'actions', width: 200, fixed: 'right' }
 ]
 
 const fetchApplications = async (): Promise<void> => {
@@ -113,6 +188,56 @@ const handlePageChange = (page: number): void => {
 const viewDetail = (record: Application): void => {
   currentApplication.value = record
   detailVisible.value = true
+}
+
+const approveApplication = (record: Application): void => {
+  currentApplication.value = record
+  approvalForm.value.approvalDetail = ''
+  approveModalVisible.value = true
+}
+
+const rejectApplication = (record: Application): void => {
+  currentApplication.value = record
+  rejectForm.value.rejectReason = ''
+  rejectModalVisible.value = true
+}
+
+const handleApprove = async (): Promise<void> => {
+  if (!currentApplication.value) return
+
+  approving.value = true
+  try {
+    await adminAPI.adminApproveApplication(
+      currentApplication.value.id,
+      approvalForm.value.approvalDetail
+    )
+    Message.success('批准成功')
+    approveModalVisible.value = false
+    fetchApplications()
+  } catch (error: any) {
+    Message.error(error.message || '批准失败')
+  } finally {
+    approving.value = false
+  }
+}
+
+const handleReject = async (): Promise<void> => {
+  if (!currentApplication.value) return
+
+  rejecting.value = true
+  try {
+    await adminAPI.adminRejectApplication(
+      currentApplication.value.id,
+      rejectForm.value.rejectReason
+    )
+    Message.success('驳回成功')
+    rejectModalVisible.value = false
+    fetchApplications()
+  } catch (error: any) {
+    Message.error(error.message || '驳回失败')
+  } finally {
+    rejecting.value = false
+  }
 }
 
 const getStatusColor = (status: number): string => {
@@ -152,7 +277,7 @@ onMounted(() => {
 
 <style scoped>
 .applications-page {
-  max-width: 1400px;
+  max-width: 1600px;
 }
 
 .page-header {
@@ -178,9 +303,41 @@ onMounted(() => {
   background: white;
   border-radius: 12px;
   overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 :deep(.arco-table-th) {
   background: #f7f8fa;
+  font-weight: 600;
+}
+
+:deep(.arco-modal-header) {
+  border-bottom: 1px solid #f0f0f0;
+}
+
+:deep(.arco-descriptions-item-label) {
+  font-weight: 500;
+  color: #4e5969;
+  background: #f7f8fa;
+}
+
+:deep(.arco-tag) {
+  font-weight: 500;
+}
+
+:deep(.arco-btn-text[status="success"]) {
+  color: #00b42a;
+}
+
+:deep(.arco-btn-text[status="success"]:hover) {
+  background: rgba(0, 180, 42, 0.1);
+}
+
+:deep(.arco-btn-text[status="danger"]) {
+  color: #f53f3f;
+}
+
+:deep(.arco-btn-text[status="danger"]:hover) {
+  background: rgba(245, 63, 63, 0.1);
 }
 </style>

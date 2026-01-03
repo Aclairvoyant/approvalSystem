@@ -45,6 +45,12 @@ public class User {
     @TableField("role")
     private Integer role;
 
+    /**
+     * 是否启用语音通知权限: 0=否, 1=是
+     */
+    @TableField("voice_notification_enabled")
+    private Boolean voiceNotificationEnabled;
+
     @TableField("status")
     private Integer status;
 

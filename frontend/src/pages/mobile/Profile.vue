@@ -749,9 +749,9 @@ onMounted(() => {
 
 <style scoped>
 .profile-page {
-  min-height: 100vh;
+  min-height: 100%;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding-bottom: 20px;
+  padding-bottom: 80px;
 }
 
 .profile-header {

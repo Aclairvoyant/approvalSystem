@@ -30,7 +30,7 @@
         finished-text="没有更多了"
         @load="onLoad"
       >
-        <div v-if="applications.length === 0 && !loading" class="empty-state">
+        <div v-if="visibleApplications.length === 0 && !loading" class="empty-state">
           <van-empty description="暂无申请记录">
             <van-button type="primary" round size="small" @click="showCreateSheet = true">
               创建申请
@@ -39,7 +39,7 @@
         </div>
 
         <div v-else class="application-list">
-          <van-swipe-cell v-for="app in applications" :key="app.id">
+          <van-swipe-cell v-for="app in visibleApplications" :key="app.id">
             <div class="application-card" @click="goToDetail(app.id)">
               <div class="card-header">
                 <div class="card-title">{{ app.title }}</div>
@@ -75,6 +75,13 @@
                 text="取消"
                 class="swipe-btn"
                 @click.stop="handleCancel(app)"
+              />
+              <van-button
+                square
+                type="warning"
+                text="删除"
+                class="swipe-btn swipe-btn-delete"
+                @click.stop="handleDelete(app)"
               />
             </template>
           </van-swipe-cell>
@@ -134,9 +141,23 @@
             </van-field>
             <van-field name="voiceNotification" label="语音通知">
               <template #input>
-                <van-switch v-model="newApplication.sendVoiceNotification" size="20" />
+                <van-switch
+                  v-model="newApplication.sendVoiceNotification"
+                  size="20"
+                  :disabled="!userStore.voiceNotificationEnabled"
+                />
+              </template>
+              <template #right-icon v-if="!userStore.voiceNotificationEnabled">
+                <van-icon name="warning-o" color="#ff7d00" />
               </template>
             </van-field>
+            <van-cell v-if="!userStore.voiceNotificationEnabled" class="voice-warning">
+              <template #title>
+                <span style="color: #ff7d00; font-size: 12px;">
+                  ⚠️ 语音通知权限未开通，请联系管理员开通后使用
+                </span>
+              </template>
+            </van-cell>
           </van-cell-group>
 
           <div class="form-actions">
@@ -211,8 +232,10 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showSuccessToast, showLoadingToast, closeToast, showConfirmDialog } from 'vant'
 import { applicationAPI, relationAPI, attachmentAPI, type Application } from '@/services/api'
+import { useUserStore } from '@/store/modules/user'
 
 const router = useRouter()
+const userStore = useUserStore()
 
 // 列表数据
 const applications = ref<Application[]>([])
@@ -223,6 +246,24 @@ const activeTab = ref(0)
 const pageNum = ref(1)
 const pageSize = 10
 const pendingCount = ref(0)
+
+// 隐藏的申请IDs（使用响应式状态）
+const hiddenApplicationIds = ref<Set<number>>(new Set())
+
+const loadHiddenApplications = (): void => {
+  const stored = localStorage.getItem('hiddenApplications')
+  hiddenApplicationIds.value = stored ? new Set(JSON.parse(stored)) : new Set()
+}
+
+const hideApplication = (id: number): void => {
+  hiddenApplicationIds.value.add(id)
+  localStorage.setItem('hiddenApplications', JSON.stringify([...hiddenApplicationIds.value]))
+}
+
+// 过滤已隐藏的申请
+const visibleApplications = computed(() => {
+  return applications.value.filter(app => !hiddenApplicationIds.value.has(app.id))
+})
 
 // 创建申请
 const showCreateSheet = ref(false)
@@ -481,8 +522,24 @@ const handleCancel = async (app: Application): Promise<void> => {
   }
 }
 
+// 删除申请（软删除，只在前端隐藏）
+const handleDelete = async (app: Application): Promise<void> => {
+  try {
+    await showConfirmDialog({
+      title: '删除记录',
+      message: '确定要删除这条申请记录吗？删除后将不再显示，但不会影响实际数据。'
+    })
+
+    hideApplication(app.id)
+    showSuccessToast('已删除')
+  } catch (error: any) {
+    // 用户取消
+  }
+}
+
 onMounted(() => {
   loadRelations()
+  loadHiddenApplications()
 })
 </script>
 
@@ -588,6 +645,10 @@ onMounted(() => {
   height: 100%;
 }
 
+.swipe-btn-delete {
+  background: #ff976a;
+}
+
 .create-form {
   padding: 16px;
   max-height: 70vh;
@@ -624,5 +685,15 @@ onMounted(() => {
 
 :deep(.van-cell-group--inset) {
   margin: 0;
+}
+
+.voice-warning {
+  background: #fff5e6;
+  padding: 8px 16px;
+}
+
+.voice-warning :deep(.van-cell__title) {
+  display: flex;
+  align-items: center;
 }
 </style>

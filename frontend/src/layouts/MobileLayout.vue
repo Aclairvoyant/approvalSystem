@@ -1,6 +1,8 @@
 <template>
   <div class="mobile-layout">
-    <router-view />
+    <div class="mobile-content">
+      <router-view />
+    </div>
     <div class="mobile-nav">
       <router-link to="/mobile/applications" class="nav-item" :class="{ active: isActive('applications') }">
         <div class="nav-icon">📝</div>
@@ -37,12 +39,14 @@ const isActive = (name: string): boolean => {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  overflow: hidden;
 }
 
-router-view {
+.mobile-content {
   flex: 1;
   overflow-y: auto;
-  padding-bottom: 60px;
+  overflow-x: hidden;
+  position: relative;
 }
 
 .mobile-nav {

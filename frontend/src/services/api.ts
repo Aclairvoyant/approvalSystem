@@ -196,4 +196,75 @@ export const adminAPI = {
   getAllApplications(params: PaginationParams & { status?: number }) {
     return http.get<{ records: Application[]; total: number }>('/admin/applications', { params })
   },
+  getAllNotifications(params: PaginationParams & { sendStatus?: number; notifyType?: number }) {
+    return http.get<{ records: Notification[]; total: number }>('/admin/notifications', { params })
+  },
+  updateUserStatus(userId: number, status: number) {
+    return http.put<User>(`/admin/users/${userId}/status`, null, { params: { status } })
+  },
+  updateUserRole(userId: number, role: number) {
+    return http.put<User>(`/admin/users/${userId}/role`, null, { params: { role } })
+  },
+  updateVoiceNotificationPermission(userId: number, enabled: boolean) {
+    return http.put<User>(`/admin/users/${userId}/voice-notification`, null, { params: { enabled } })
+  },
+  updateUserInfo(userId: number, data: { realName?: string; phone?: string; email?: string }) {
+    return http.put<User>(`/admin/users/${userId}`, data)
+  },
+  adminApproveApplication(applicationId: number, approvalDetail?: string) {
+    return http.post<void>(`/admin/applications/${applicationId}/approve`, null, {
+      params: { approvalDetail }
+    })
+  },
+  adminRejectApplication(applicationId: number, rejectReason?: string) {
+    return http.post<void>(`/admin/applications/${applicationId}/reject`, null, {
+      params: { rejectReason }
+    })
+  },
+}
+
+// 通知类型
+export interface Notification {
+  id: number
+  applicationId: number
+  notifyUserId: number
+  notifyType: number
+  notifyTitle: string
+  notifyContent: string
+  phone?: string
+  email?: string
+  sendStatus: number
+  sendError?: string
+  createdAt: string
+  sentAt?: string
+}
+
+// 评论类型
+export interface ApplicationComment {
+  id: number
+  applicationId: number
+  userId: number
+  userName: string
+  userAvatar?: string
+  content: string
+  parentId?: number
+  createdAt: string
+  updatedAt?: string
+  replies?: ApplicationComment[]
+}
+
+// 评论 API
+export const commentAPI = {
+  getApplicationComments(applicationId: number) {
+    return http.get<ApplicationComment[]>(`/comments/application/${applicationId}`)
+  },
+  createComment(data: { applicationId: number; content: string; parentId?: number }) {
+    return http.post<ApplicationComment>('/comments', data)
+  },
+  updateComment(commentId: number, content: string) {
+    return http.put<ApplicationComment>(`/comments/${commentId}`, { content })
+  },
+  deleteComment(commentId: number) {
+    return http.delete<void>(`/comments/${commentId}`)
+  }
 }

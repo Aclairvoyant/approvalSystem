@@ -80,6 +80,7 @@ public class AuthController {
                     .email(user.getEmail())
                     .avatar(user.getAvatar())
                     .role(user.getRole() != null ? user.getRole() : 0)
+                    .voiceNotificationEnabled(user.getVoiceNotificationEnabled() != null && user.getVoiceNotificationEnabled())
                     .build();
 
             return ApiResponse.success("登录成功", response);

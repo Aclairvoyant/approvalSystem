@@ -64,14 +64,25 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
         // 根据开关决定是否发送语音通知给审批人
         if (Boolean.TRUE.equals(sendVoiceNotification)) {
             try {
-                // 获取申请人和审批人信息
+                // 检查申请人是否有语音通知权限
                 User applicant = userMapper.selectById(applicantId);
+                if (applicant == null) {
+                    log.error("申请人不存在，applicantId: {}", applicantId);
+                    throw new RuntimeException("申请人不存在");
+                }
+
+                if (applicant.getVoiceNotificationEnabled() == null || !applicant.getVoiceNotificationEnabled()) {
+                    log.warn("用户未开通语音通知权限，userId: {}", applicantId);
+                    throw new RuntimeException("您未开通语音通知权限，请联系管理员开通");
+                }
+
+                // 获取审批人信息
                 User approver = userMapper.selectById(approverId);
 
                 if (approver != null) {
-                    String applicantName = applicant != null && applicant.getRealName() != null
+                    String applicantName = applicant.getRealName() != null
                             ? applicant.getRealName()
-                            : (applicant != null ? applicant.getUsername() : "用户");
+                            : applicant.getUsername();
 
                     // 发送语音通知
                     if (approver.getPhone() != null && !approver.getPhone().isEmpty()) {
@@ -80,13 +91,16 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
                                 applicantName,
                                 title
                         );
-                        // 创建通知记录 - 语音通知
-                        notificationService.createNotification(
+                        // 创建通知记录 - 语音通知（已发送状态）
+                        notificationService.createSentNotification(
                                 application.getId(),
                                 approverId,
                                 1, // 1=SMS(语音通知)
                                 "新的待审批申请",
-                                "您有来自 " + applicantName + " 的待审批申请: " + title
+                                "您有来自 " + applicantName + " 的待审批申请: " + title,
+                                approver.getPhone(),
+                                null,
+                                voiceSuccess
                         );
                         if (voiceSuccess) {
                             log.info("语音通知发送成功，手机号: {}", approver.getPhone());
@@ -122,13 +136,16 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
                             title,
                             application.getId()
                     );
-                    // 创建通知记录 - 邮件通知
-                    notificationService.createNotification(
+                    // 创建通知记录 - 邮件通知（已发送状态）
+                    notificationService.createSentNotification(
                             application.getId(),
                             approverId,
                             2, // 2=EMAIL
                             "新的待审批申请",
-                            "您有来自 " + applicantName + " 的待审批申请: " + title
+                            "您有来自 " + applicantName + " 的待审批申请: " + title,
+                            null,
+                            approver.getEmail(),
+                            emailSuccess
                     );
                     if (emailSuccess) {
                         log.info("邮件通知发送成功，邮箱: {}", approver.getEmail());
@@ -152,6 +169,18 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
     @Override
     public boolean sendVoiceNotificationToApprover(Long applicationId, Long operatorId) {
         try {
+            // 检查操作者是否有语音通知权限
+            User operator = userMapper.selectById(operatorId);
+            if (operator == null) {
+                log.error("操作者不存在，operatorId: {}", operatorId);
+                throw new RuntimeException("操作者不存在");
+            }
+
+            if (operator.getVoiceNotificationEnabled() == null || !operator.getVoiceNotificationEnabled()) {
+                log.warn("用户未开通语音通知权限，userId: {}", operatorId);
+                throw new RuntimeException("您未开通语音通知权限，请联系管理员开通");
+            }
+
             // 获取申请详情
             Application application = this.getById(applicationId);
             if (application == null) {
@@ -185,13 +214,16 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
                     application.getTitle()
             );
 
-            // 创建通知记录 - 语音通知
-            notificationService.createNotification(
+            // 创建通知记录 - 语音通知（已发送状态）
+            notificationService.createSentNotification(
                     application.getId(),
                     application.getApproverId(),
                     1, // 1=SMS(语音通知)
                     "新的待审批申请",
-                    "您有来自 " + applicantName + " 的待审批申请: " + application.getTitle()
+                    "您有来自 " + applicantName + " 的待审批申请: " + application.getTitle(),
+                    approver.getPhone(),
+                    null,
+                    success
             );
 
             if (success) {
@@ -290,6 +322,52 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
         // 记录操作日志
         recordOperationLog(applicationId, approverId, OperationTypeEnum.APPROVE.getCode(),
                 oldStatus, ApplicationStatusEnum.APPROVED.getCode(), approvalDetail);
+
+        // 发送邮件通知申请人
+        try {
+            User applicant = userMapper.selectById(application.getApplicantId());
+            User approver = userMapper.selectById(approverId);
+
+            if (applicant != null && applicant.getEmail() != null && !applicant.getEmail().isEmpty()) {
+                String applicantName = applicant.getRealName() != null ? applicant.getRealName() : applicant.getUsername();
+                String approverName = approver != null && approver.getRealName() != null
+                        ? approver.getRealName()
+                        : (approver != null ? approver.getUsername() : "审批人");
+
+                boolean emailSuccess = emailService.sendApprovalNotification(
+                        applicant.getEmail(),
+                        applicantName,
+                        approverName,
+                        application.getTitle(),
+                        approvalDetail,
+                        applicationId
+                );
+
+                // 创建通知记录（已发送状态）
+                String emailTitle = "申请已批准 - " + application.getTitle();
+                String emailContent = "您提交的申请已被批准";
+                notificationService.createSentNotification(
+                        application.getId(),
+                        application.getApplicantId(),
+                        2, // 2=EMAIL
+                        emailTitle,
+                        emailContent,
+                        null,
+                        applicant.getEmail(),
+                        emailSuccess
+                );
+
+                if (emailSuccess) {
+                    log.info("批准通知邮件发送成功，applicationId: {}, 邮箱: {}", applicationId, applicant.getEmail());
+                } else {
+                    log.warn("批准通知邮件发送失败，applicationId: {}, 邮箱: {}", applicationId, applicant.getEmail());
+                }
+            } else {
+                log.warn("申请人邮箱为空，无法发送批准通知，申请人ID: {}", application.getApplicantId());
+            }
+        } catch (Exception e) {
+            log.error("发送批准通知失败，但审批操作已完成", e);
+        }
     }
 
     @Override
@@ -315,6 +393,52 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
         // 记录操作日志
         recordOperationLog(applicationId, approverId, OperationTypeEnum.REJECT.getCode(),
                 oldStatus, ApplicationStatusEnum.REJECTED.getCode(), rejectReason);
+
+        // 发送邮件通知申请人
+        try {
+            User applicant = userMapper.selectById(application.getApplicantId());
+            User approver = userMapper.selectById(approverId);
+
+            if (applicant != null && applicant.getEmail() != null && !applicant.getEmail().isEmpty()) {
+                String applicantName = applicant.getRealName() != null ? applicant.getRealName() : applicant.getUsername();
+                String approverName = approver != null && approver.getRealName() != null
+                        ? approver.getRealName()
+                        : (approver != null ? approver.getUsername() : "审批人");
+
+                boolean emailSuccess = emailService.sendRejectionNotification(
+                        applicant.getEmail(),
+                        applicantName,
+                        approverName,
+                        application.getTitle(),
+                        rejectReason,
+                        applicationId
+                );
+
+                // 创建通知记录（已发送状态）
+                String emailTitle = "申请已驳回 - " + application.getTitle();
+                String emailContent = "您提交的申请已被驳回";
+                notificationService.createSentNotification(
+                        application.getId(),
+                        application.getApplicantId(),
+                        2, // 2=EMAIL
+                        emailTitle,
+                        emailContent,
+                        null,
+                        applicant.getEmail(),
+                        emailSuccess
+                );
+
+                if (emailSuccess) {
+                    log.info("驳回通知邮件发送成功，applicationId: {}, 邮箱: {}", applicationId, applicant.getEmail());
+                } else {
+                    log.warn("驳回通知邮件发送失败，applicationId: {}, 邮箱: {}", applicationId, applicant.getEmail());
+                }
+            } else {
+                log.warn("申请人邮箱为空，无法发送驳回通知，申请人ID: {}", application.getApplicantId());
+            }
+        } catch (Exception e) {
+            log.error("发送驳回通知失败，但审批操作已完成", e);
+        }
     }
 
     @Override

@@ -4,6 +4,7 @@ import com.approval.system.dto.UserUpdateRequest;
 import com.approval.system.entity.User;
 import com.approval.system.mapper.UserMapper;
 import com.approval.system.service.IUserService;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -81,6 +82,26 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     @Override
     public User findByPhone(String phone) {
         return this.baseMapper.selectByPhone(phone);
+    }
+
+    @Override
+    public User getUserByPhone(String phone) {
+        if (phone == null || phone.isEmpty()) {
+            return null;
+        }
+        LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(User::getPhone, phone);
+        return this.getOne(wrapper);
+    }
+
+    @Override
+    public User getUserByEmail(String email) {
+        if (email == null || email.isEmpty()) {
+            return null;
+        }
+        LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(User::getEmail, email);
+        return this.getOne(wrapper);
     }
 
     @Override

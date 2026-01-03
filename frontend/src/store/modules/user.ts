@@ -13,6 +13,9 @@ export const useUserStore = defineStore('user', () => {
   const email = ref<string>(localStorage.getItem('email') || '')
   const avatar = ref<string>(localStorage.getItem('avatar') || '')
   const role = ref<number>(parseInt(localStorage.getItem('role') || '0'))
+  const voiceNotificationEnabled = ref<boolean>(
+    localStorage.getItem('voiceNotificationEnabled') === 'true'
+  )
 
   // 计算属性
   const isLoggedIn = computed(() => !!token.value)
@@ -27,6 +30,7 @@ export const useUserStore = defineStore('user', () => {
     email.value = data.email || ''
     avatar.value = data.avatar || ''
     role.value = data.role || 0
+    voiceNotificationEnabled.value = (data as any).voiceNotificationEnabled || false
 
     // 保存到本地存储
     localStorage.setItem('token', data.token || '')
@@ -37,6 +41,7 @@ export const useUserStore = defineStore('user', () => {
     localStorage.setItem('email', data.email || '')
     localStorage.setItem('avatar', data.avatar || '')
     localStorage.setItem('role', String(data.role || 0))
+    localStorage.setItem('voiceNotificationEnabled', String((data as any).voiceNotificationEnabled || false))
   }
 
   const clearUserInfo = (): void => {
@@ -48,6 +53,7 @@ export const useUserStore = defineStore('user', () => {
     email.value = ''
     avatar.value = ''
     role.value = 0
+    voiceNotificationEnabled.value = false
 
     localStorage.removeItem('token')
     localStorage.removeItem('userId')
@@ -57,6 +63,7 @@ export const useUserStore = defineStore('user', () => {
     localStorage.removeItem('email')
     localStorage.removeItem('avatar')
     localStorage.removeItem('role')
+    localStorage.removeItem('voiceNotificationEnabled')
   }
 
   return {
@@ -68,6 +75,7 @@ export const useUserStore = defineStore('user', () => {
     email,
     avatar,
     role,
+    voiceNotificationEnabled,
     isLoggedIn,
     isAdmin,
     setUserInfo,
