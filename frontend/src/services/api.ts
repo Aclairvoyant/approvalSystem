@@ -268,3 +268,200 @@ export const commentAPI = {
     return http.delete<void>(`/comments/${commentId}`)
   }
 }
+
+// ===================== 游戏相关类型和API =====================
+
+// 任务位置信息
+export interface TaskPositionInfo {
+  position: number
+  taskId: number | null
+  title: string
+}
+
+// 游戏信息类型
+export interface GameInfo {
+  id: number
+  gameCode: string
+  player1Id: number
+  player1Name: string | null
+  player1Avatar: string | null
+  player2Id: number | null
+  player2Name: string | null
+  player2Avatar: string | null
+  currentTurn: number
+  gameStatus: number
+  winnerId: number | null
+  player1Pieces: number[]
+  player2Pieces: number[]
+  lastDiceResult: number | null
+  taskPositions: number[]  // 任务位置数组
+  taskInfos: TaskPositionInfo[]  // 任务位置详细信息
+  createdAt: string
+  startedAt: string | null
+  endedAt: string | null
+}
+
+// 游戏任务类型
+export interface GameTask {
+  id: number
+  taskType: number
+  creatorId: number | null
+  category: string
+  difficulty: number
+  title: string
+  description: string
+  requirement: string
+  timeLimit: number | null
+  points: number
+  usageCount: number
+  createdAt: string
+}
+
+// 游戏任务记录类型
+export interface GameTaskRecord {
+  id: number
+  gameId: number
+  taskId: number
+  triggerPlayerId: number
+  executorPlayerId: number
+  taskStatus: number
+  completionNote: string | null
+  triggeredPosition: number
+  createdAt: string
+  completedAt: string | null
+}
+
+// 游戏分页结果
+export interface PageGameInfo {
+  records: GameInfo[]
+  total: number
+  size: number
+  current: number
+  pages: number
+}
+
+export interface PageGameTask {
+  records: GameTask[]
+  total: number
+  size: number
+  current: number
+  pages: number
+}
+
+// 游戏 API
+export const gameApi = {
+  // 创建游戏房间（支持自定义任务位置）
+  createGame(opponentUserId: number, taskPositions?: number[]) {
+    return http.post<GameInfo>('/game/create', { opponentUserId, taskPositions })
+  },
+
+  // 更新任务位置配置（房主在等待状态可用）
+  updateTaskPositions(gameId: number, taskPositions: number[]) {
+    return http.put<GameInfo>(`/game/${gameId}/task-positions`, taskPositions)
+  },
+
+  // 加入游戏房间
+  joinGame(gameCode: string) {
+    return http.post<GameInfo>('/game/join', { gameCode })
+  },
+
+  // 获取游戏详情
+  getGameDetail(gameId: number) {
+    return http.get<GameInfo>(`/game/${gameId}`)
+  },
+
+  // 获取用户游戏列表
+  getUserGames(status?: number, pageNum = 1, pageSize = 10) {
+    return http.get<PageGameInfo>('/game/list', {
+      params: { status, pageNum, pageSize }
+    })
+  },
+
+  // 取消游戏
+  cancelGame(gameId: number) {
+    return http.post<void>(`/game/${gameId}/cancel`)
+  },
+
+  // 强制结束游戏（房主可用）
+  forceEndGame(gameId: number) {
+    return http.post<void>(`/game/${gameId}/force-end`)
+  },
+
+  // 检查轮次
+  checkTurn(gameId: number) {
+    return http.get<boolean>(`/game/${gameId}/turn`)
+  },
+
+  // 心跳
+  heartbeat(gameId: number) {
+    return http.post<void>(`/game/${gameId}/heartbeat`)
+  }
+}
+
+// 游戏任务 API
+export const gameTaskApi = {
+  // 创建自定义任务
+  createCustomTask(data: {
+    title: string
+    description?: string
+    requirement?: string
+    category?: string
+    difficulty?: number
+    timeLimit?: number
+    points?: number
+  }) {
+    return http.post<GameTask>('/game/task/create', data)
+  },
+
+  // 获取预设任务列表
+  getPresetTasks(params?: {
+    category?: string
+    difficulty?: number
+    pageNum?: number
+    pageSize?: number
+  }) {
+    return http.get<PageGameTask>('/game/task/preset', { params })
+  },
+
+  // 获取用户自定义任务列表
+  getUserCustomTasks(pageNum = 1, pageSize = 20) {
+    return http.get<PageGameTask>('/game/task/custom', {
+      params: { pageNum, pageSize }
+    })
+  },
+
+  // 获取任务详情
+  getTaskById(taskId: number) {
+    return http.get<GameTask>(`/game/task/${taskId}`)
+  },
+
+  // 删除自定义任务
+  deleteCustomTask(taskId: number) {
+    return http.delete<void>(`/game/task/${taskId}`)
+  },
+
+  // 获取随机任务
+  getRandomTask(category?: string) {
+    return http.get<GameTask>('/game/task/random', { params: { category } })
+  },
+
+  // 完成任务
+  completeTask(recordId: number, completionNote?: string) {
+    return http.post<void>(`/game/task/record/${recordId}/complete`, { completionNote })
+  },
+
+  // 放弃任务
+  abandonTask(recordId: number) {
+    return http.post<void>(`/game/task/record/${recordId}/abandon`)
+  },
+
+  // 获取游戏任务记录
+  getGameTaskRecords(gameId: number) {
+    return http.get<GameTaskRecord[]>(`/game/task/record/game/${gameId}`)
+  },
+
+  // 获取当前任务
+  getCurrentTask(gameId: number) {
+    return http.get<GameTaskRecord | null>(`/game/task/record/game/${gameId}/current`)
+  }
+}

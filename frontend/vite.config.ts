@@ -4,7 +4,8 @@ import path from 'path'
 
 export default defineConfig({
   define: {
-    __VUE_PROD_DEVTOOLS__: false
+    __VUE_PROD_DEVTOOLS__: false,
+    global: 'globalThis',  // 修复 sockjs-client 的 "global is not defined" 错误
   },
   plugins: [vue()],
   resolve: {
@@ -22,6 +23,11 @@ export default defineConfig({
         // ✅ 重写路径（移除 /api 前缀然后再加上）
         rewrite: (path) => path,
         // ✅ WebSocket 支持
+        ws: true,
+      },
+      '/ws': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
         ws: true,
       },
     },

@@ -47,6 +47,8 @@ public class SecurityConfig {
                         // ✅ 允许公开路由 - 只允许登录和注册
                         .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/send-email-code").permitAll()
                         .requestMatchers("/api/health").permitAll()
+                        // ✅ 允许 WebSocket 端点
+                        .requestMatchers("/ws/**").permitAll()
                         // ✅ 允许 OpenAPI/Swagger 文档
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/v3/api-docs.yaml").permitAll()
@@ -66,7 +68,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // ✅ 允许所有源（在生产环境中应该指定具体的源）
+        // ✅ 使用 allowedOriginPatterns 代替 allowedOrigins，支持凭证
         configuration.setAllowedOriginPatterns(Collections.singletonList("*"));
 
         // ✅ 允许所有 HTTP 方法
@@ -90,8 +92,9 @@ public class SecurityConfig {
                 "Accept"
         ));
 
-        // ✅ 不允许凭证（因为使用 * 作为源时不能设置 allowCredentials = true）
-        configuration.setAllowCredentials(false);
+        // ✅ 允许凭证（WebSocket/SockJS需要此设置）
+        // 注意：使用 allowedOriginPatterns 而非 allowedOrigins 时可以设置为 true
+        configuration.setAllowCredentials(true);
 
         // ✅ 预检请求缓存时间（1小时）
         configuration.setMaxAge(3600L);

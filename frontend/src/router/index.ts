@@ -49,6 +49,21 @@ const routes: RouteRecordRaw[] = [
         name: 'MobileApplicationDetail',
         component: () => import('@/pages/mobile/ApplicationDetail.vue'),
       },
+      {
+        path: 'game',
+        name: 'MobileGameLobby',
+        component: () => import('@/pages/mobile/GameLobby.vue'),
+      },
+      {
+        path: 'game/room/:id',
+        name: 'MobileGameRoom',
+        component: () => import('@/pages/mobile/GameRoom.vue'),
+      },
+      {
+        path: 'game/tasks',
+        name: 'MobileGameTasks',
+        component: () => import('@/pages/mobile/GameTasks.vue'),
+      },
     ],
   },
   {

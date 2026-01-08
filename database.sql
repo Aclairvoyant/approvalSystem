@@ -12,6 +12,8 @@ CREATE TABLE users (
   password VARCHAR(255) NOT NULL COMMENT '密码（加密）',
   real_name VARCHAR(50) COMMENT '真实姓名',
   avatar VARCHAR(255) COMMENT '头像URL',
+  role TINYINT DEFAULT 0 COMMENT '角色：0=普通用户，1=管理员',
+  voice_notification_enabled TINYINT DEFAULT 0 COMMENT '语音通知权限：0=禁用，1=启用',
   status TINYINT DEFAULT 1 COMMENT '用户状态：1=正常，0=禁用',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -132,3 +134,149 @@ CREATE TABLE approval_attachments (
 -- 创建索引以提高查询性能
 CREATE INDEX idx_applications_applicant_approver ON applications(applicant_id, approver_id);
 CREATE INDEX idx_applications_approver_status ON applications(approver_id, status);
+
+-- ============================================
+-- 游戏系统相关表
+-- ============================================
+
+-- 游戏表（飞行棋游戏）
+CREATE TABLE games (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '游戏ID',
+  game_code VARCHAR(20) NOT NULL UNIQUE COMMENT '游戏房间号（6位随机码）',
+  player1_id BIGINT NOT NULL COMMENT '玩家1（房主）ID',
+  player2_id BIGINT COMMENT '玩家2 ID（未加入时为NULL）',
+  current_turn TINYINT DEFAULT 1 COMMENT '当前轮到谁：1=玩家1，2=玩家2',
+  game_status TINYINT DEFAULT 1 COMMENT '游戏状态：1=等待加入，2=游戏中，3=已结束，4=已取消',
+  winner_id BIGINT COMMENT '获胜者ID',
+  board_data JSON COMMENT '棋盘状态（JSON格式存储所有棋子位置）',
+  player1_pieces JSON COMMENT '玩家1的4个棋子位置数组 [0,0,0,0]',
+  player2_pieces JSON COMMENT '玩家2的4个棋子位置数组 [0,0,0,0]',
+  last_dice_result TINYINT COMMENT '最后一次骰子结果（1-6）',
+  last_move_time DATETIME COMMENT '最后一次操作时间',
+  task_positions JSON COMMENT '自定义任务位置数组，如 [5,10,15,20,25]',
+  task_assignments JSON COMMENT '任务位置分配映射，如 {"5":1,"10":3}',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  started_at DATETIME COMMENT '游戏开始时间',
+  ended_at DATETIME COMMENT '游戏结束时间',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  FOREIGN KEY (player1_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (player2_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (winner_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_game_code (game_code),
+  INDEX idx_player1_id (player1_id),
+  INDEX idx_player2_id (player2_id),
+  INDEX idx_game_status (game_status),
+  INDEX idx_created_at (created_at)
+) COMMENT='飞行棋游戏表';
+
+-- 游戏任务表（情侣升温任务）
+CREATE TABLE game_tasks (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '任务ID',
+  task_type TINYINT DEFAULT 1 COMMENT '任务类型：1=预设任务，2=用户自定义',
+  creator_id BIGINT COMMENT '创建者ID（自定义任务时有值）',
+  category VARCHAR(50) COMMENT '任务分类：romantic（浪漫）, fun（趣味）, challenge（挑战）, intimate（亲密）',
+  difficulty TINYINT DEFAULT 1 COMMENT '难度等级：1=简单，2=中等，3=困难',
+  title VARCHAR(255) NOT NULL COMMENT '任务标题',
+  description TEXT COMMENT '任务描述',
+  requirement TEXT COMMENT '完成要求',
+  time_limit INT COMMENT '完成时限（分钟）',
+  points INT DEFAULT 10 COMMENT '任务积分',
+  is_active TINYINT DEFAULT 1 COMMENT '是否启用：1=启用，0=禁用',
+  usage_count INT DEFAULT 0 COMMENT '被使用次数',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  FOREIGN KEY (creator_id) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_task_type (task_type),
+  INDEX idx_category (category),
+  INDEX idx_creator_id (creator_id),
+  INDEX idx_is_active (is_active)
+) COMMENT='游戏任务表';
+
+-- 游戏任务完成记录表
+CREATE TABLE game_task_records (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '记录ID',
+  game_id BIGINT NOT NULL COMMENT '游戏ID',
+  task_id BIGINT NOT NULL COMMENT '任务ID',
+  trigger_player_id BIGINT NOT NULL COMMENT '触发任务的玩家ID',
+  executor_player_id BIGINT NOT NULL COMMENT '执行任务的玩家ID（可能与触发者不同）',
+  task_status TINYINT DEFAULT 1 COMMENT '任务状态：1=进行中，2=已完成，3=已放弃，4=已超时',
+  completion_note TEXT COMMENT '完成备注/说明',
+  triggered_position INT COMMENT '触发任务时的棋盘位置',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '触发时间',
+  completed_at DATETIME COMMENT '完成时间',
+  FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES game_tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (trigger_player_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (executor_player_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_game_id (game_id),
+  INDEX idx_task_id (task_id),
+  INDEX idx_trigger_player_id (trigger_player_id)
+) COMMENT='游戏任务完成记录表';
+
+-- 游戏操作历史表
+CREATE TABLE game_moves (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '操作ID',
+  game_id BIGINT NOT NULL COMMENT '游戏ID',
+  player_id BIGINT NOT NULL COMMENT '操作玩家ID',
+  move_type TINYINT NOT NULL COMMENT '操作类型：1=掷骰子，2=移动棋子，3=吃子，4=触发任务，5=完成任务',
+  dice_result TINYINT COMMENT '骰子结果（1-6）',
+  piece_index TINYINT COMMENT '棋子索引（0-3）',
+  from_position INT COMMENT '起始位置',
+  to_position INT COMMENT '目标位置',
+  captured_piece_index TINYINT COMMENT '被吃的对方棋子索引',
+  task_id BIGINT COMMENT '触发的任务ID',
+  move_data JSON COMMENT '操作详细数据（JSON格式）',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
+  FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
+  FOREIGN KEY (player_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES game_tasks(id) ON DELETE SET NULL,
+  INDEX idx_game_id (game_id),
+  INDEX idx_player_id (player_id),
+  INDEX idx_created_at (created_at)
+) COMMENT='游戏操作历史表';
+
+-- 用户游戏统计表
+CREATE TABLE user_game_stats (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '统计ID',
+  user_id BIGINT NOT NULL UNIQUE COMMENT '用户ID',
+  total_games INT DEFAULT 0 COMMENT '总游戏场次',
+  win_count INT DEFAULT 0 COMMENT '胜利次数',
+  lose_count INT DEFAULT 0 COMMENT '失败次数',
+  draw_count INT DEFAULT 0 COMMENT '平局次数',
+  total_tasks_completed INT DEFAULT 0 COMMENT '完成任务总数',
+  total_points INT DEFAULT 0 COMMENT '累计积分',
+  win_rate DECIMAL(5,2) DEFAULT 0.00 COMMENT '胜率（百分比）',
+  favorite_task_category VARCHAR(50) COMMENT '最喜欢的任务分类',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_win_rate (win_rate),
+  INDEX idx_total_points (total_points)
+) COMMENT='用户游戏统计表';
+
+-- 插入预设任务数据
+INSERT INTO game_tasks (task_type, category, difficulty, title, description, requirement, points) VALUES
+(1, 'romantic', 1, '说出三个喜欢对方的理由', '用心感受对方的美好', '真诚说出三个具体的理由', 10),
+(1, 'romantic', 2, '唱一首情歌', '用歌声传递爱意', '完整唱一首情歌给对方听', 15),
+(1, 'romantic', 2, '说出你们的三个美好回忆', '回忆过去的甜蜜时光', '具体描述三个难忘的瞬间', 15),
+(1, 'romantic', 3, '写一首小诗表达爱意', '用文字表达内心的情感', '创作并朗读一首4句以上的小诗', 20),
+(1, 'fun', 1, '模仿对方的口头禅', '观察对方的小习惯', '模仿3句对方的口头禅', 10),
+(1, 'fun', 1, '做5个搞怪表情', '逗对方开心', '连续做5个夸张的表情', 10),
+(1, 'fun', 2, '用三个词描述对方', '考验你对对方的了解', '选择三个最贴切的形容词', 15),
+(1, 'fun', 2, '说出对方最喜欢的5样东西', '展示你的细心', '说出对方最爱的食物/电影/歌曲等', 15),
+(1, 'challenge', 2, '15秒四目相对不笑', '考验彼此的默契', '对视15秒不笑场', 15),
+(1, 'challenge', 2, '背诵对方的生日和重要纪念日', '考验记忆力', '准确说出至少3个重要日期', 15),
+(1, 'challenge', 3, '用一句话总结你们的关系', '深度思考和表达', '用最精炼的语言表达你们的爱情', 20),
+(1, 'intimate', 2, '给对方一个20秒的拥抱', '增进亲密关系', '拥抱20秒不松开', 15),
+(1, 'intimate', 3, '给对方一个60秒的拥抱', '增进亲密关系', '拥抱60秒不松开', 20),
+(1, 'intimate', 2, '亲吻对方的额头', '温柔的爱意表达', '轻轻亲吻对方的额头', 15),
+(1, 'intimate', 3, '计划一次约会', '用心准备美好时光', '详细说出约会的时间、地点和活动安排', 20);
+
+-- ============================================
+-- 数据库升级脚本（用于已有数据库）
+-- ============================================
+
+-- 为games表添加任务配置字段（如果不存在）
+use approval_system;
+ALTER TABLE games ADD COLUMN task_positions JSON COMMENT '自定义任务位置数组，如 [5,10,15,20,25]';
+ALTER TABLE games ADD COLUMN task_assignments JSON COMMENT '任务位置分配映射，如 {"5":1,"10":3}';

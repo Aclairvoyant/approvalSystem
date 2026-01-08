@@ -16,6 +16,10 @@
         <div class="nav-icon">👥</div>
         <div class="nav-label">我的对象</div>
       </router-link>
+      <router-link to="/mobile/game" class="nav-item" :class="{ active: isActive('game') }">
+        <div class="nav-icon">🎮</div>
+        <div class="nav-label">游戏</div>
+      </router-link>
       <router-link to="/mobile/profile" class="nav-item" :class="{ active: isActive('profile') }">
         <div class="nav-icon">👤</div>
         <div class="nav-label">个人中心</div>
