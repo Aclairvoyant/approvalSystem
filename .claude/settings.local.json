@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(cat:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(find:*)",
+      "Bash(git -C \"D:/JavaProj/approvalSystem\" log --oneline -10)",
+      "mcp__ide__getDiagnostics"
     ]
   }
 }

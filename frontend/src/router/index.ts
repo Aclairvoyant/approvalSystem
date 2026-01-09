@@ -51,7 +51,12 @@ const routes: RouteRecordRaw[] = [
       },
       {
         path: 'game',
-        name: 'MobileGameLobby',
+        name: 'MobileGameCenter',
+        component: () => import('@/pages/mobile/GameCenter.vue'),
+      },
+      {
+        path: 'game/flight-chess',
+        name: 'MobileFlightChess',
         component: () => import('@/pages/mobile/GameLobby.vue'),
       },
       {
@@ -63,6 +68,16 @@ const routes: RouteRecordRaw[] = [
         path: 'game/tasks',
         name: 'MobileGameTasks',
         component: () => import('@/pages/mobile/GameTasks.vue'),
+      },
+      {
+        path: 'mahjong',
+        name: 'MobileMahjongLobby',
+        component: () => import('@/pages/mobile/MahjongLobby.vue'),
+      },
+      {
+        path: 'mahjong/room/:id',
+        name: 'MobileMahjongRoom',
+        component: () => import('@/pages/mobile/MahjongRoom.vue'),
       },
     ],
   },

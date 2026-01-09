@@ -280,3 +280,151 @@ INSERT INTO game_tasks (task_type, category, difficulty, title, description, req
 use approval_system;
 ALTER TABLE games ADD COLUMN task_positions JSON COMMENT '自定义任务位置数组，如 [5,10,15,20,25]';
 ALTER TABLE games ADD COLUMN task_assignments JSON COMMENT '任务位置分配映射，如 {"5":1,"10":3}';
+
+-- ============================================
+-- 麻将游戏系统相关表
+-- ============================================
+
+-- 麻将游戏表
+CREATE TABLE mahjong_games (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '游戏ID',
+    game_code VARCHAR(8) NOT NULL UNIQUE COMMENT '房间号（6-8位随机码）',
+
+    -- 游戏配置
+    rule_type TINYINT NOT NULL DEFAULT 1 COMMENT '规则类型: 1=敲麻, 2=百搭',
+    flower_mode TINYINT NOT NULL DEFAULT 8 COMMENT '花牌模式: 8=8花, 20=20花, 36=36花 (仅百搭)',
+    player_count TINYINT NOT NULL DEFAULT 4 COMMENT '玩家人数: 2/3/4',
+    total_rounds INT NOT NULL DEFAULT 8 COMMENT '总局数: 4/8/16',
+    base_score INT NOT NULL DEFAULT 1 COMMENT '底分: 1/2/5/10',
+    max_score INT NULL DEFAULT 100 COMMENT '封顶分数: 20/50/100/200/NULL=无封顶',
+    fly_count TINYINT NOT NULL DEFAULT 0 COMMENT '飞苍蝇数量: 0-5',
+
+    -- 百搭配置（百搭模式专用）
+    wild_tile VARCHAR(10) NULL COMMENT '百搭牌 (如 "4WAN")',
+    guide_tile VARCHAR(10) NULL COMMENT '前端引导牌',
+    dice1 TINYINT NULL COMMENT '第一个骰子点数',
+    dice2 TINYINT NULL COMMENT '第二个骰子点数',
+    wall_start_seat TINYINT NULL COMMENT '开始取牌的玩家座位 1-4',
+    wall_start_pos INT NULL COMMENT '牌墙起始位置',
+
+    -- 玩家信息（座位1-4）
+    player1_id BIGINT NOT NULL COMMENT '玩家1（房主）ID',
+    player2_id BIGINT NULL COMMENT '玩家2 ID',
+    player3_id BIGINT NULL COMMENT '玩家3 ID',
+    player4_id BIGINT NULL COMMENT '玩家4 ID',
+
+    -- 游戏状态
+    game_status TINYINT NOT NULL DEFAULT 1 COMMENT '1=等待加入, 2=进行中, 3=已结束, 4=已取消',
+    current_round INT NOT NULL DEFAULT 0 COMMENT '当前局数（0表示未开始）',
+    dealer_seat TINYINT NOT NULL DEFAULT 1 COMMENT '当前庄家座位 1-4',
+
+    -- 积分（累计）
+    player1_score INT NOT NULL DEFAULT 0 COMMENT '玩家1累计积分',
+    player2_score INT NOT NULL DEFAULT 0 COMMENT '玩家2累计积分',
+    player3_score INT NOT NULL DEFAULT 0 COMMENT '玩家3累计积分',
+    player4_score INT NOT NULL DEFAULT 0 COMMENT '玩家4累计积分',
+
+    -- 时间戳
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    started_at DATETIME NULL COMMENT '游戏开始时间',
+    ended_at DATETIME NULL COMMENT '游戏结束时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+    FOREIGN KEY (player1_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (player2_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (player3_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (player4_id) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_mahjong_game_code (game_code),
+    INDEX idx_mahjong_players (player1_id, player2_id, player3_id, player4_id),
+    INDEX idx_mahjong_status (game_status),
+    INDEX idx_mahjong_created (created_at)
+) COMMENT='麻将游戏表';
+
+-- 麻将单局记录表
+CREATE TABLE mahjong_rounds (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '单局ID',
+    game_id BIGINT NOT NULL COMMENT '所属游戏ID',
+    round_number INT NOT NULL COMMENT '第几局',
+
+    -- 局状态
+    round_status TINYINT NOT NULL DEFAULT 1 COMMENT '1=进行中, 2=流局(荒番), 3=胡牌结束',
+    dealer_seat TINYINT NOT NULL COMMENT '本局庄家座位 1-4',
+    current_turn TINYINT NOT NULL DEFAULT 1 COMMENT '当前操作玩家座位 1-4',
+
+    -- 牌局数据 (JSON格式)
+    wall_tiles JSON COMMENT '牌墙剩余牌 ["1WAN","2WAN"...]',
+    player1_hand JSON COMMENT '玩家1手牌',
+    player2_hand JSON COMMENT '玩家2手牌',
+    player3_hand JSON COMMENT '玩家3手牌',
+    player4_hand JSON COMMENT '玩家4手牌',
+
+    player1_melds JSON COMMENT '玩家1明牌(碰/杠) [{"type":"PONG","tiles":["1WAN","1WAN","1WAN"]}]',
+    player2_melds JSON COMMENT '玩家2明牌',
+    player3_melds JSON COMMENT '玩家3明牌',
+    player4_melds JSON COMMENT '玩家4明牌',
+
+    player1_discards JSON COMMENT '玩家1弃牌区',
+    player2_discards JSON COMMENT '玩家2弃牌区',
+    player3_discards JSON COMMENT '玩家3弃牌区',
+    player4_discards JSON COMMENT '玩家4弃牌区',
+
+    player1_flowers JSON COMMENT '玩家1花牌',
+    player2_flowers JSON COMMENT '玩家2花牌',
+    player3_flowers JSON COMMENT '玩家3花牌',
+    player4_flowers JSON COMMENT '玩家4花牌',
+
+    -- 最后操作信息
+    last_tile VARCHAR(10) NULL COMMENT '最后打出/摸到的牌',
+    last_action VARCHAR(20) NULL COMMENT '最后操作类型 DRAW/DISCARD/PONG/KONG/HU',
+    last_action_seat TINYINT NULL COMMENT '最后操作者座位',
+
+    -- 等待响应（碰/杠/胡）
+    pending_actions JSON NULL COMMENT '待处理的响应操作 [{"seat":2,"actions":["PONG","HU"]}]',
+
+    -- 结算信息
+    winner_seat TINYINT NULL COMMENT '胡牌者座位（NULL=流局）',
+    hu_type VARCHAR(200) NULL COMMENT '胡牌类型（可多个，逗号分隔）',
+    fan_count INT NULL COMMENT '总番数',
+    score_changes JSON COMMENT '分数变化 {"1":-10,"2":30,"3":-10,"4":-10}',
+
+    -- 时间
+    started_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '开始时间',
+    ended_at DATETIME NULL COMMENT '结束时间',
+
+    FOREIGN KEY (game_id) REFERENCES mahjong_games(id) ON DELETE CASCADE,
+    INDEX idx_mahjong_round_game (game_id, round_number),
+    INDEX idx_mahjong_round_status (round_status)
+) COMMENT='麻将单局记录表';
+
+-- 麻将操作记录表
+CREATE TABLE mahjong_actions (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '操作ID',
+    round_id BIGINT NOT NULL COMMENT '所属单局ID',
+    player_seat TINYINT NOT NULL COMMENT '操作者座位 1-4',
+    action_type VARCHAR(20) NOT NULL COMMENT '操作类型: DRAW/DISCARD/PONG/MING_KONG/AN_KONG/BU_KONG/BU_HUA/HU/PASS',
+    tile VARCHAR(10) NULL COMMENT '相关的牌 (如 "1WAN")',
+    action_data JSON NULL COMMENT '额外数据 (如杠的详细信息)',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
+
+    FOREIGN KEY (round_id) REFERENCES mahjong_rounds(id) ON DELETE CASCADE,
+    INDEX idx_mahjong_action_round (round_id),
+    INDEX idx_mahjong_action_time (created_at)
+) COMMENT='麻将操作记录表';
+
+-- 麻将用户统计表
+CREATE TABLE mahjong_user_stats (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '统计ID',
+    user_id BIGINT NOT NULL UNIQUE COMMENT '用户ID',
+    total_games INT DEFAULT 0 COMMENT '总游戏场次',
+    total_rounds INT DEFAULT 0 COMMENT '总局数',
+    win_count INT DEFAULT 0 COMMENT '胡牌次数',
+    self_draw_count INT DEFAULT 0 COMMENT '自摸次数',
+    total_score INT DEFAULT 0 COMMENT '累计积分',
+    max_fan INT DEFAULT 0 COMMENT '最高番数',
+    four_wild_count INT DEFAULT 0 COMMENT '四百搭次数',
+    no_wild_count INT DEFAULT 0 COMMENT '无百搭次数',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_mahjong_stats_score (total_score)
+) COMMENT='麻将用户统计表';

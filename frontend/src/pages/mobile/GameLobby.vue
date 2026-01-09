@@ -2,8 +2,14 @@
   <div class="game-lobby">
     <!-- 顶部区域 -->
     <div class="header-section">
-      <div class="title">飞行棋游戏</div>
-      <div class="subtitle">和TA一起玩，感情升温</div>
+      <van-nav-bar
+        title="飞行棋"
+        left-arrow
+        @click-left="router.push('/mobile/game')"
+        :border="false"
+        class="header-nav"
+      />
+      <div class="header-desc">和TA一起玩，完成任务赢奖励</div>
     </div>
 
     <!-- 操作区域 -->
@@ -366,19 +372,28 @@ onMounted(() => {
 
 .header-section {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 40px 20px;
-  text-align: center;
-  color: white;
+  padding-bottom: 40px;
 
-  .title {
-    font-size: 28px;
-    font-weight: bold;
-    margin-bottom: 8px;
+  .header-nav {
+    background: transparent;
+    :deep(.van-nav-bar__content) {
+      background: transparent;
+    }
+    :deep(.van-nav-bar__title) {
+      color: white;
+      font-size: 18px;
+      font-weight: bold;
+    }
+    :deep(.van-nav-bar__arrow) {
+      color: white;
+    }
   }
 
-  .subtitle {
+  .header-desc {
+    text-align: center;
     font-size: 14px;
-    opacity: 0.9;
+    color: rgba(255, 255, 255, 0.9);
+    margin-top: -8px;
   }
 }
 
