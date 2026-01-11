@@ -66,6 +66,18 @@ public interface IMahjongEngine {
      */
     int getWallRemaining();
 
+    /**
+     * 获取牌墙剩余牌
+     * @return 牌墙列表
+     */
+    List<MahjongTile> getWall();
+
+    /**
+     * 设置牌墙(用于状态恢复)
+     * @param wall 牌墙列表
+     */
+    void setWall(List<MahjongTile> wall);
+
     // ==================== 操作验证 ====================
 
     /**
@@ -90,6 +102,15 @@ public interface IMahjongEngine {
      * @return 是否可以碰
      */
     boolean canPong(int seat, MahjongTile discardedTile);
+
+    /**
+     * 检查是否可以吃(只能吃上家的牌)
+     * @param seat 座位号
+     * @param discardedTile 被打出的牌
+     * @param fromSeat 出牌者座位
+     * @return 可以吃的牌组合列表，每个组合是两张手牌的编码
+     */
+    List<List<String>> getChiOptions(int seat, MahjongTile discardedTile, int fromSeat);
 
     /**
      * 检查是否可以明杠(别人打出的牌,手中有三张)
@@ -152,6 +173,15 @@ public interface IMahjongEngine {
      * @param fromSeat 来源座位
      */
     void pong(int seat, MahjongTile discardedTile, int fromSeat);
+
+    /**
+     * 吃牌
+     * @param seat 座位号
+     * @param discardedTile 吃的牌
+     * @param fromSeat 来源座位
+     * @param chiTiles 用于吃的两张手牌
+     */
+    void chi(int seat, MahjongTile discardedTile, int fromSeat, List<MahjongTile> chiTiles);
 
     /**
      * 明杠(别人打出的牌)
@@ -262,6 +292,7 @@ public interface IMahjongEngine {
         private boolean isConcealed; // 是否暗杠
 
         public enum MeldType {
+            CHI,        // 吃
             PONG,       // 碰
             MING_KONG,  // 明杠
             AN_KONG,    // 暗杠

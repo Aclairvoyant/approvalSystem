@@ -6,6 +6,7 @@ import com.approval.system.entity.*;
 import com.approval.system.mapper.*;
 import com.approval.system.service.IMahjongEngine;
 import com.approval.system.service.IMahjongService;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -173,11 +174,14 @@ public class MahjongServiceImpl implements IMahjongService {
         game.setUpdatedAt(LocalDateTime.now());
         gameMapper.updateById(game);
 
-        log.info("玩家离开麻将游戏: gameId={}, userId={}", gameId, userId);
+        log.info("玩家离开麻将游戏: gameId={}, userId={}, newStatus={}", gameId, userId, game.getGameStatus());
 
-        // 广播状态变化
-        if (game.getGameStatus() != MahjongGameStatus.CANCELLED.getCode()) {
-            broadcastGameState(game);
+        // 广播玩家离开消息（无论游戏是否被取消都要广播，让其他玩家知道）
+        broadcastPlayerLeft(game, userId);
+
+        // 如果游戏被取消，清理引擎缓存
+        if (game.getGameStatus() == MahjongGameStatus.CANCELLED.getCode()) {
+            engineCache.remove(game.getId());
         }
     }
 
@@ -261,7 +265,7 @@ public class MahjongServiceImpl implements IMahjongService {
         IMahjongEngine engine = getOrCreateEngine(game);
 
         // 获取当前局
-        MahjongRound round = roundMapper.selectCurrentRound(gameId);
+        MahjongRound round = findCurrentRound(gameId);
         if (round == null) {
             throw new IllegalStateException("当前没有进行中的局");
         }
@@ -270,8 +274,16 @@ public class MahjongServiceImpl implements IMahjongService {
         MahjongActionType actionType = MahjongActionType.valueOf(request.getActionType());
         MahjongTile tile = request.getTile() != null ? MahjongTile.fromCode(request.getTile()) : null;
 
+        // 解析吃牌使用的手牌
+        List<MahjongTile> chiTiles = null;
+        if (request.getChiTiles() != null && !request.getChiTiles().isEmpty()) {
+            chiTiles = request.getChiTiles().stream()
+                    .map(MahjongTile::fromCode)
+                    .collect(Collectors.toList());
+        }
+
         // 执行操作
-        executePlayerAction(engine, round, playerSeat, actionType, tile, game);
+        executePlayerAction(engine, round, playerSeat, actionType, tile, chiTiles, game);
 
         // 保存操作记录
         saveAction(round.getId(), playerSeat, actionType, tile);
@@ -387,12 +399,198 @@ public class MahjongServiceImpl implements IMahjongService {
 
     private IMahjongEngine getOrCreateEngine(MahjongGame game) {
         return engineCache.computeIfAbsent(game.getId(), id -> {
+            log.info("创建新引擎实例: gameId={}, 尝试从数据库恢复状态", game.getId());
+
+            // 创建新引擎
+            IMahjongEngine engine;
             if (game.getRuleType() == MahjongRuleType.BAI_DA.getCode()) {
-                return baidaEngine;
+                engine = new ShanghaiBaidaEngine();
             } else {
-                return qiaomaEngine;
+                engine = new ShanghaiQiaomaEngine();
             }
+
+            // 尝试从数据库恢复引擎状态
+            MahjongRound round = findCurrentRound(game.getId());
+            if (round != null) {
+                restoreEngineState(engine, round, game);
+            }
+
+            return engine;
         });
+    }
+
+    /**
+     * 从数据库恢复引擎状态
+     */
+    private void restoreEngineState(IMahjongEngine engine, MahjongRound round, MahjongGame game) {
+        log.info("从数据库恢复引擎状态: gameId={}, roundNumber={}", game.getId(), round.getRoundNumber());
+
+        // 初始化引擎
+        engine.initRound(round, game.getPlayerCount(), game.getFlowerMode());
+
+        // 恢复手牌
+        if (round.getPlayer1Hand() != null) {
+            setEnginePlayerHand(engine, 1, round.getPlayer1Hand());
+        }
+        if (round.getPlayer2Hand() != null) {
+            setEnginePlayerHand(engine, 2, round.getPlayer2Hand());
+        }
+        if (round.getPlayer3Hand() != null) {
+            setEnginePlayerHand(engine, 3, round.getPlayer3Hand());
+        }
+        if (round.getPlayer4Hand() != null) {
+            setEnginePlayerHand(engine, 4, round.getPlayer4Hand());
+        }
+
+        // 恢复弃牌
+        if (round.getPlayer1Discards() != null) {
+            setEnginePlayerDiscards(engine, 1, round.getPlayer1Discards());
+        }
+        if (round.getPlayer2Discards() != null) {
+            setEnginePlayerDiscards(engine, 2, round.getPlayer2Discards());
+        }
+        if (round.getPlayer3Discards() != null) {
+            setEnginePlayerDiscards(engine, 3, round.getPlayer3Discards());
+        }
+        if (round.getPlayer4Discards() != null) {
+            setEnginePlayerDiscards(engine, 4, round.getPlayer4Discards());
+        }
+
+        // 恢复花牌
+        if (round.getPlayer1Flowers() != null) {
+            setEnginePlayerFlowers(engine, 1, round.getPlayer1Flowers());
+        }
+        if (round.getPlayer2Flowers() != null) {
+            setEnginePlayerFlowers(engine, 2, round.getPlayer2Flowers());
+        }
+        if (round.getPlayer3Flowers() != null) {
+            setEnginePlayerFlowers(engine, 3, round.getPlayer3Flowers());
+        }
+        if (round.getPlayer4Flowers() != null) {
+            setEnginePlayerFlowers(engine, 4, round.getPlayer4Flowers());
+        }
+
+        // 恢复明牌（碰/杠）
+        if (round.getPlayer1Melds() != null) {
+            setEnginePlayerMelds(engine, 1, round.getPlayer1Melds());
+        }
+        if (round.getPlayer2Melds() != null) {
+            setEnginePlayerMelds(engine, 2, round.getPlayer2Melds());
+        }
+        if (round.getPlayer3Melds() != null) {
+            setEnginePlayerMelds(engine, 3, round.getPlayer3Melds());
+        }
+        if (round.getPlayer4Melds() != null) {
+            setEnginePlayerMelds(engine, 4, round.getPlayer4Melds());
+        }
+
+        // 恢复牌墙
+        if (round.getWallTiles() != null && !round.getWallTiles().isEmpty()) {
+            List<MahjongTile> wallTiles = round.getWallTiles().stream()
+                    .map(MahjongTile::fromCode)
+                    .collect(Collectors.toList());
+            engine.setWall(wallTiles);
+        }
+
+        // 恢复百搭牌信息（百搭模式）
+        if (engine instanceof ShanghaiBaidaEngine) {
+            ShanghaiBaidaEngine baidaEngine = (ShanghaiBaidaEngine) engine;
+            baidaEngine.restoreWildTile(game.getWildTile(), game.getGuideTile());
+        }
+
+        log.info("引擎状态恢复完成: wallRemaining={}", engine.getWallRemaining());
+    }
+
+    /**
+     * 设置引擎中玩家手牌（通过反射或直接访问）
+     */
+    private void setEnginePlayerHand(IMahjongEngine engine, int seat, List<String> handCodes) {
+        if (engine instanceof ShanghaiQiaomaEngine) {
+            ShanghaiQiaomaEngine qiaomaEngine = (ShanghaiQiaomaEngine) engine;
+            List<MahjongTile> tiles = handCodes.stream()
+                    .map(MahjongTile::fromCode)
+                    .collect(Collectors.toList());
+            qiaomaEngine.playerHands.put(seat, tiles);
+        }
+    }
+
+    private void setEnginePlayerDiscards(IMahjongEngine engine, int seat, List<String> discardCodes) {
+        if (engine instanceof ShanghaiQiaomaEngine) {
+            ShanghaiQiaomaEngine qiaomaEngine = (ShanghaiQiaomaEngine) engine;
+            List<MahjongTile> tiles = discardCodes.stream()
+                    .map(MahjongTile::fromCode)
+                    .collect(Collectors.toList());
+            qiaomaEngine.playerDiscards.put(seat, tiles);
+        }
+    }
+
+    private void setEnginePlayerFlowers(IMahjongEngine engine, int seat, List<String> flowerCodes) {
+        if (engine instanceof ShanghaiQiaomaEngine) {
+            ShanghaiQiaomaEngine qiaomaEngine = (ShanghaiQiaomaEngine) engine;
+            List<MahjongTile> tiles = flowerCodes.stream()
+                    .map(MahjongTile::fromCode)
+                    .collect(Collectors.toList());
+            qiaomaEngine.playerFlowers.put(seat, tiles);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void setEnginePlayerMelds(IMahjongEngine engine, int seat, List<Map<String, Object>> meldMaps) {
+        if (engine instanceof ShanghaiQiaomaEngine) {
+            ShanghaiQiaomaEngine qiaomaEngine = (ShanghaiQiaomaEngine) engine;
+            List<IMahjongEngine.Meld> melds = new ArrayList<>();
+
+            for (Map<String, Object> meldMap : meldMaps) {
+                String typeStr = (String) meldMap.get("type");
+                Object tilesObj = meldMap.get("tiles");
+                Boolean concealed = (Boolean) meldMap.get("concealed");
+
+                IMahjongEngine.Meld.MeldType type = IMahjongEngine.Meld.MeldType.valueOf(typeStr);
+                List<MahjongTile> tiles = new ArrayList<>();
+                if (tilesObj instanceof List) {
+                    for (Object t : (List<?>) tilesObj) {
+                        tiles.add(MahjongTile.fromCode(t.toString()));
+                    }
+                }
+
+                melds.add(new IMahjongEngine.Meld(type, tiles, 0, concealed != null && concealed));
+            }
+
+            qiaomaEngine.playerMelds.put(seat, melds);
+        }
+    }
+
+    /**
+     * 获取当前进行中的局（使用LambdaQueryWrapper以支持TypeHandler）
+     */
+    private MahjongRound findCurrentRound(Long gameId) {
+        LambdaQueryWrapper<MahjongRound> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(MahjongRound::getGameId, gameId)
+               .eq(MahjongRound::getRoundStatus, MahjongRoundStatus.PLAYING.getCode())
+               .orderByDesc(MahjongRound::getRoundNumber)
+               .last("LIMIT 1");
+        return roundMapper.selectOne(wrapper);
+    }
+
+    /**
+     * 获取游戏的最后一局（使用LambdaQueryWrapper以支持TypeHandler）
+     */
+    private MahjongRound findLastRound(Long gameId) {
+        LambdaQueryWrapper<MahjongRound> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(MahjongRound::getGameId, gameId)
+               .orderByDesc(MahjongRound::getRoundNumber)
+               .last("LIMIT 1");
+        return roundMapper.selectOne(wrapper);
+    }
+
+    /**
+     * 获取游戏的所有局（使用LambdaQueryWrapper以支持TypeHandler）
+     */
+    private List<MahjongRound> findAllRounds(Long gameId) {
+        LambdaQueryWrapper<MahjongRound> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(MahjongRound::getGameId, gameId)
+               .orderByAsc(MahjongRound::getRoundNumber);
+        return roundMapper.selectList(wrapper);
     }
 
     private void startNewRound(MahjongGame game) {
@@ -439,7 +637,67 @@ public class MahjongServiceImpl implements IMahjongService {
 
     private void executePlayerAction(IMahjongEngine engine, MahjongRound round,
                                      int playerSeat, MahjongActionType actionType,
-                                     MahjongTile tile, MahjongGame game) {
+                                     MahjongTile tile, List<MahjongTile> chiTiles, MahjongGame game) {
+        // 验证是否轮到该玩家（除了 PASS 和响应操作）
+        boolean isResponseAction = actionType == MahjongActionType.PASS ||
+                                   actionType == MahjongActionType.PONG ||
+                                   actionType == MahjongActionType.MING_KONG ||
+                                   actionType == MahjongActionType.CHI;
+
+        if (!isResponseAction) {
+            // 检查是否有等待响应的操作
+            if (round.getPendingActions() != null && !round.getPendingActions().isEmpty()) {
+                throw new IllegalStateException("等待其他玩家响应中");
+            }
+            // 检查是否是当前回合
+            if (round.getCurrentTurn() != playerSeat) {
+                throw new IllegalStateException("还没轮到你操作，当前轮到座位 " + round.getCurrentTurn());
+            }
+        } else if (isResponseAction && actionType != MahjongActionType.PASS) {
+            // 响应操作需要检查是否在等待列表中
+            List<Map<String, Object>> pendingActions = round.getPendingActions();
+            log.info("检查响应操作权限: playerSeat={}, actionType={}, pendingActions={}", playerSeat, actionType, pendingActions);
+
+            if (pendingActions == null || pendingActions.isEmpty()) {
+                throw new IllegalStateException("当前没有可响应的操作");
+            }
+            boolean canRespond = false;
+            for (Map<String, Object> action : pendingActions) {
+                Object seatObj = action.get("seat");
+                int seat;
+                if (seatObj instanceof Integer) {
+                    seat = (Integer) seatObj;
+                } else if (seatObj instanceof Number) {
+                    seat = ((Number) seatObj).intValue();
+                } else {
+                    seat = Integer.parseInt(seatObj.toString());
+                }
+                log.info("检查待响应操作: seat={}, playerSeat={}, match={}", seat, playerSeat, seat == playerSeat);
+                if (seat == playerSeat) {
+                    // 检查该操作是否在允许的操作列表中
+                    Object actionsObj = action.get("actions");
+                    log.info("允许的操作列表: {}, 类型: {}", actionsObj, actionsObj != null ? actionsObj.getClass().getName() : "null");
+                    if (actionsObj instanceof List) {
+                        List<?> actionsList = (List<?>) actionsObj;
+                        String actionName = actionType.name();
+                        // 检查列表中是否包含该操作（转为字符串比较）
+                        for (Object a : actionsList) {
+                            if (actionName.equals(a.toString())) {
+                                canRespond = true;
+                                log.info("操作验证通过: {}", actionName);
+                                break;
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+            if (!canRespond) {
+                log.warn("响应操作验证失败: playerSeat={}, actionType={}, pendingActions={}", playerSeat, actionType, pendingActions);
+                throw new IllegalStateException("你没有可响应的操作: " + actionType);
+            }
+        }
+
         switch (actionType) {
             case DRAW:
                 engine.draw(playerSeat);
@@ -461,7 +719,7 @@ public class MahjongServiceImpl implements IMahjongService {
                     round.setPendingActions(pendingActions);
                 } else {
                     // 没有人可以响应，直接进入下一个玩家回合
-                    round.setPendingActions(null);
+                    round.setPendingActions(new ArrayList<>()); // 使用空列表而非null
                     int nextSeat = engine.getNextSeat(playerSeat, game.getPlayerCount());
                     round.setCurrentTurn(nextSeat);
                     // 自动摸牌
@@ -475,7 +733,7 @@ public class MahjongServiceImpl implements IMahjongService {
                 MahjongTile pongTile = tile != null ? tile : MahjongTile.fromCode(round.getLastTile());
                 engine.pong(playerSeat, pongTile, round.getLastActionSeat());
                 round.setCurrentTurn(playerSeat); // 碰牌后由碰牌者出牌
-                round.setPendingActions(null); // 清除等待状态
+                round.setPendingActions(new ArrayList<>()); // 清除等待状态（使用空列表而非null，确保数据库更新）
                 round.setLastAction("PONG");
                 round.setLastActionSeat(playerSeat);
                 break;
@@ -483,8 +741,20 @@ public class MahjongServiceImpl implements IMahjongService {
                 MahjongTile kongTile = tile != null ? tile : MahjongTile.fromCode(round.getLastTile());
                 engine.mingKong(playerSeat, kongTile, round.getLastActionSeat());
                 round.setCurrentTurn(playerSeat);
-                round.setPendingActions(null);
+                round.setPendingActions(new ArrayList<>()); // 清除等待状态（使用空列表而非null，确保数据库更新）
                 round.setLastAction("MING_KONG");
+                round.setLastActionSeat(playerSeat);
+                break;
+            case CHI:
+                // 吃牌
+                MahjongTile chiDiscardTile = tile != null ? tile : MahjongTile.fromCode(round.getLastTile());
+                if (chiTiles == null || chiTiles.size() != 2) {
+                    throw new IllegalArgumentException("吃牌时必须指定两张手牌");
+                }
+                engine.chi(playerSeat, chiDiscardTile, round.getLastActionSeat(), chiTiles);
+                round.setCurrentTurn(playerSeat); // 吃牌后由吃牌者出牌
+                round.setPendingActions(new ArrayList<>());
+                round.setLastAction("CHI");
                 round.setLastActionSeat(playerSeat);
                 break;
             case AN_KONG:
@@ -511,7 +781,7 @@ public class MahjongServiceImpl implements IMahjongService {
     }
 
     /**
-     * 检查其他玩家是否可以碰/杠/胡
+     * 检查其他玩家是否可以吃/碰/杠/胡
      */
     private List<Map<String, Object>> checkPendingActions(IMahjongEngine engine, MahjongTile discardedTile,
                                                           int discardSeat, int playerCount) {
@@ -535,11 +805,21 @@ public class MahjongServiceImpl implements IMahjongService {
                 availableActions.add("PONG");
             }
 
+            // 检查是否可以吃（百搭麻将可以吃上家的牌）
+            List<List<String>> chiOptions = engine.getChiOptions(seat, discardedTile, discardSeat);
+            if (!chiOptions.isEmpty()) {
+                availableActions.add("CHI");
+            }
+
             if (!availableActions.isEmpty()) {
                 availableActions.add("PASS"); // 添加过选项
                 Map<String, Object> action = new HashMap<>();
                 action.put("seat", seat);
                 action.put("actions", availableActions);
+                // 如果有吃牌选项，添加到响应中
+                if (!chiOptions.isEmpty()) {
+                    action.put("chiOptions", chiOptions);
+                }
                 pendingActions.add(action);
             }
         }
@@ -559,13 +839,20 @@ public class MahjongServiceImpl implements IMahjongService {
         // 移除该玩家的等待操作
         pendingActions.removeIf(action -> {
             Object seatObj = action.get("seat");
-            int seat = seatObj instanceof Integer ? (Integer) seatObj : Integer.parseInt(seatObj.toString());
+            int seat;
+            if (seatObj instanceof Integer) {
+                seat = (Integer) seatObj;
+            } else if (seatObj instanceof Number) {
+                seat = ((Number) seatObj).intValue();
+            } else {
+                seat = Integer.parseInt(seatObj.toString());
+            }
             return seat == playerSeat;
         });
 
         if (pendingActions.isEmpty()) {
             // 所有玩家都过了，进入下一个玩家回合
-            round.setPendingActions(null);
+            round.setPendingActions(new ArrayList<>()); // 使用空列表而非null
             int nextSeat = engine.getNextSeat(round.getLastActionSeat(), game.getPlayerCount());
             round.setCurrentTurn(nextSeat);
             // 自动摸牌
@@ -623,8 +910,12 @@ public class MahjongServiceImpl implements IMahjongService {
     }
 
     private void updateRoundState(MahjongRound round, IMahjongEngine engine) {
-        // 将引擎状态保存到round的JSON字段
-        round.setWallTiles(tilesToCodes(getWallTilesFromEngine(engine)));
+        // 将引擎状态保存到round字段
+        round.setWallRemaining(engine.getWallRemaining()); // 保存牌墙剩余数量
+        // 保存牌墙剩余牌（用于状态恢复）
+        round.setWallTiles(tilesToCodes(engine.getWall()));
+        // currentTurn, lastTile, lastAction, lastActionSeat, pendingActions 已在 executePlayerAction 中设置
+        // 这里只需要确保它们被保存到数据库
         round.setPlayer1Hand(tilesToCodes(engine.getPlayerHand(1)));
         round.setPlayer2Hand(tilesToCodes(engine.getPlayerHand(2)));
         round.setPlayer3Hand(tilesToCodes(engine.getPlayerHand(3)));
@@ -643,18 +934,16 @@ public class MahjongServiceImpl implements IMahjongService {
         round.setPlayer3Flowers(tilesToCodes(engine.getPlayerFlowers(3)));
         round.setPlayer4Flowers(tilesToCodes(engine.getPlayerFlowers(4)));
 
+        // 更新数据库（包括 currentTurn, lastTile, lastAction, pendingActions 等所有字段）
         roundMapper.updateById(round);
-    }
 
-    private List<MahjongTile> getWallTilesFromEngine(IMahjongEngine engine) {
-        // 这个方法需要在引擎接口中添加
-        // 目前简化处理，返回空列表
-        return new ArrayList<>();
+        log.debug("updateRoundState: currentTurn={}, wallRemaining={}", round.getCurrentTurn(), round.getWallRemaining());
     }
 
     private List<String> tilesToCodes(List<MahjongTile> tiles) {
         if (tiles == null) return new ArrayList<>();
         return tiles.stream()
+                .filter(t -> t != null)
                 .map(MahjongTile::toCode)
                 .collect(Collectors.toList());
     }
@@ -709,13 +998,79 @@ public class MahjongServiceImpl implements IMahjongService {
         // 向每个玩家发送其可见的游戏状态
         String destination = "/topic/mahjong/game/" + game.getId();
 
-        // 发送游戏基础信息给所有玩家
+        // 发送完整游戏基础信息给所有玩家
         Map<String, Object> message = new HashMap<>();
         message.put("type", "GAME_STATE");
         message.put("gameId", game.getId());
         message.put("gameCode", game.getGameCode());
         message.put("gameStatus", game.getGameStatus());
         message.put("currentRound", game.getCurrentRound());
+        message.put("playerCount", game.getPlayerCount());
+        message.put("dealerSeat", game.getDealerSeat());
+        message.put("totalRounds", game.getTotalRounds());
+
+        // 添加玩家ID信息（关键！用于判断玩家是否加入）
+        message.put("player1Id", game.getPlayer1Id());
+        message.put("player2Id", game.getPlayer2Id());
+        message.put("player3Id", game.getPlayer3Id());
+        message.put("player4Id", game.getPlayer4Id());
+
+        // 添加玩家名称信息
+        if (game.getPlayer1Id() != null) {
+            User user1 = userMapper.selectById(game.getPlayer1Id());
+            if (user1 != null) {
+                message.put("player1Name", user1.getRealName() != null ? user1.getRealName() : user1.getUsername());
+                message.put("player1Avatar", user1.getAvatar());
+            }
+        }
+        if (game.getPlayer2Id() != null) {
+            User user2 = userMapper.selectById(game.getPlayer2Id());
+            if (user2 != null) {
+                message.put("player2Name", user2.getRealName() != null ? user2.getRealName() : user2.getUsername());
+                message.put("player2Avatar", user2.getAvatar());
+            }
+        }
+        if (game.getPlayer3Id() != null) {
+            User user3 = userMapper.selectById(game.getPlayer3Id());
+            if (user3 != null) {
+                message.put("player3Name", user3.getRealName() != null ? user3.getRealName() : user3.getUsername());
+                message.put("player3Avatar", user3.getAvatar());
+            }
+        }
+        if (game.getPlayer4Id() != null) {
+            User user4 = userMapper.selectById(game.getPlayer4Id());
+            if (user4 != null) {
+                message.put("player4Name", user4.getRealName() != null ? user4.getRealName() : user4.getUsername());
+                message.put("player4Avatar", user4.getAvatar());
+            }
+        }
+
+        // 添加积分信息
+        message.put("player1Score", game.getPlayer1Score());
+        message.put("player2Score", game.getPlayer2Score());
+        message.put("player3Score", game.getPlayer3Score());
+        message.put("player4Score", game.getPlayer4Score());
+
+        messagingTemplate.convertAndSend(destination, message);
+    }
+
+    /**
+     * 广播玩家离开消息
+     */
+    private void broadcastPlayerLeft(MahjongGame game, Long leftUserId) {
+        String destination = "/topic/mahjong/game/" + game.getId();
+
+        Map<String, Object> message = new HashMap<>();
+        message.put("type", "PLAYER_LEFT");
+        message.put("gameId", game.getId());
+        message.put("leftUserId", leftUserId);
+        message.put("gameStatus", game.getGameStatus());
+
+        // 发送更新后的玩家信息
+        message.put("player1Id", game.getPlayer1Id());
+        message.put("player2Id", game.getPlayer2Id());
+        message.put("player3Id", game.getPlayer3Id());
+        message.put("player4Id", game.getPlayer4Id());
 
         messagingTemplate.convertAndSend(destination, message);
     }
@@ -726,6 +1081,7 @@ public class MahjongServiceImpl implements IMahjongService {
         // 基础信息
         response.setId(game.getId());
         response.setGameCode(game.getGameCode());
+        response.setCurrentUserId(userId);  // 设置当前用户ID用于验证
 
         // 游戏配置
         response.setRuleType(game.getRuleType());
@@ -760,7 +1116,7 @@ public class MahjongServiceImpl implements IMahjongService {
 
         // 当前局状态
         if (game.getGameStatus() == MahjongGameStatus.PLAYING.getCode()) {
-            MahjongRound round = roundMapper.selectCurrentRound(game.getId());
+            MahjongRound round = findCurrentRound(game.getId());
             if (round != null) {
                 response.setCurrentRoundData(buildRoundResponse(round, game, userId));
             }
@@ -822,10 +1178,14 @@ public class MahjongServiceImpl implements IMahjongService {
         int mySeat = getPlayerSeat(game, userId);
         response.setMySeat(mySeat);
 
+        log.info("buildRoundResponse: userId={}, mySeat={}, player1Id={}, player2Id={}, player3Id={}, player4Id={}",
+                userId, mySeat, game.getPlayer1Id(), game.getPlayer2Id(), game.getPlayer3Id(), game.getPlayer4Id());
+
         // 设置我的手牌（只有自己能看到）
         if (mySeat > 0) {
             List<String> myHand = getHandBySeat(round, mySeat);
             response.setMyHand(myHand);
+            log.debug("myHand size: {}", myHand != null ? myHand.size() : "null");
         }
 
         // 设置所有玩家的明牌和弃牌（公开信息）
@@ -839,25 +1199,100 @@ public class MahjongServiceImpl implements IMahjongService {
         response.setPlayer3Discards(round.getPlayer3Discards());
         response.setPlayer4Discards(round.getPlayer4Discards());
 
+        // 花牌
+        response.setPlayer1Flowers(round.getPlayer1Flowers());
+        response.setPlayer2Flowers(round.getPlayer2Flowers());
+        response.setPlayer3Flowers(round.getPlayer3Flowers());
+        response.setPlayer4Flowers(round.getPlayer4Flowers());
+
         // 手牌数量
         response.setPlayer1HandCount(getHandCount(round.getPlayer1Hand()));
         response.setPlayer2HandCount(getHandCount(round.getPlayer2Hand()));
         response.setPlayer3HandCount(getHandCount(round.getPlayer3Hand()));
         response.setPlayer4HandCount(getHandCount(round.getPlayer4Hand()));
 
-        // 牌墙剩余
-        response.setWallRemaining(getHandCount(round.getWallTiles()));
+        // 最后操作信息（用于碰/杠响应）
+        response.setLastTile(round.getLastTile());
+        response.setLastAction(round.getLastAction());
+        response.setLastActionSeat(round.getLastActionSeat());
+
+        // 牌墙剩余 - 优先从引擎获取，否则从数据库获取
+        IMahjongEngine engine = engineCache.get(game.getId());
+        // 只有当引擎存在且已初始化时才使用引擎数据
+        if (engine != null && engine.getWallRemaining() > 0) {
+            response.setWallRemaining(engine.getWallRemaining());
+            log.debug("wallRemaining from engine: {}", engine.getWallRemaining());
+        } else {
+            // 从数据库的 wallRemaining 字段获取
+            response.setWallRemaining(round.getWallRemaining() != null ? round.getWallRemaining() : 0);
+            log.debug("wallRemaining from db: {}", round.getWallRemaining());
+        }
 
         // 可执行操作
-        if (mySeat > 0) {
-            IMahjongEngine engine = engineCache.get(game.getId());
-            if (engine != null) {
-                boolean isMyTurn = round.getCurrentTurn() == mySeat;
-                List<MahjongActionType> actions = engine.getAvailableActions(mySeat, null, isMyTurn);
-                response.setAvailableActions(actions.stream()
-                        .map(MahjongActionType::name)
-                        .collect(Collectors.toList()));
+        if (mySeat > 0 && round.getRoundStatus() == MahjongRoundStatus.PLAYING.getCode()) {
+            boolean isMyTurn = round.getCurrentTurn() == mySeat;
+            List<String> actions = new ArrayList<>();
+
+            // 首先检查是否有待响应的操作（碰/杠）
+            List<Map<String, Object>> pendingActions = round.getPendingActions();
+            if (pendingActions != null && !pendingActions.isEmpty()) {
+                // 查找该玩家是否有待响应的操作
+                for (Map<String, Object> pending : pendingActions) {
+                    Object seatObj = pending.get("seat");
+                    int pendingSeat;
+                    if (seatObj instanceof Integer) {
+                        pendingSeat = (Integer) seatObj;
+                    } else if (seatObj instanceof Number) {
+                        pendingSeat = ((Number) seatObj).intValue();
+                    } else {
+                        pendingSeat = Integer.parseInt(seatObj.toString());
+                    }
+                    if (pendingSeat == mySeat) {
+                        // 该玩家可以响应
+                        Object actionsObj = pending.get("actions");
+                        if (actionsObj instanceof List) {
+                            List<?> actionsList = (List<?>) actionsObj;
+                            for (Object a : actionsList) {
+                                actions.add(a.toString());
+                            }
+                        }
+                        // 提取吃牌选项
+                        Object chiOptionsObj = pending.get("chiOptions");
+                        if (chiOptionsObj instanceof List) {
+                            @SuppressWarnings("unchecked")
+                            List<List<String>> chiOpts = (List<List<String>>) chiOptionsObj;
+                            response.setChiOptions(chiOpts);
+                            log.info("用户 {} (座位 {}) 吃牌选项: {}", userId, mySeat, chiOpts);
+                        }
+                        log.info("用户 {} (座位 {}) 可响应的操作: {}", userId, mySeat, actions);
+                        break;
+                    }
+                }
+                if (actions.isEmpty()) {
+                    log.info("用户 {} (座位 {}) 不在待响应列表中，pendingActions={}", userId, mySeat, pendingActions);
+                }
+            } else if (isMyTurn) {
+                // 轮到自己，从引擎获取可用操作
+                if (engine != null) {
+                    List<MahjongActionType> engineActions = engine.getAvailableActions(mySeat, null, true);
+                    actions = engineActions.stream()
+                            .map(MahjongActionType::name)
+                            .collect(Collectors.toList());
+                } else {
+                    // 引擎不存在时，根据数据库状态推断可用操作
+                    List<String> myHand = getHandBySeat(round, mySeat);
+                    // 手牌数量为 3n+2 时需要出牌（14, 11, 8, 5, 2）
+                    if (myHand != null && !myHand.isEmpty() && myHand.size() % 3 == 2) {
+                        actions.add("DISCARD");
+                    }
+                    log.warn("引擎缓存不存在，根据数据库状态推断可用操作: gameId={}, handSize={}, actions={}",
+                            game.getId(), myHand != null ? myHand.size() : 0, actions);
+                }
             }
+
+            response.setAvailableActions(actions);
+            log.info("buildRoundResponse 最终结果: userId={}, mySeat={}, isMyTurn={}, availableActions={}",
+                    userId, mySeat, isMyTurn, actions);
         }
 
         // 结算信息
@@ -869,13 +1304,13 @@ public class MahjongServiceImpl implements IMahjongService {
     }
 
     private List<String> getHandBySeat(MahjongRound round, int seat) {
-        switch (seat) {
-            case 1: return round.getPlayer1Hand();
-            case 2: return round.getPlayer2Hand();
-            case 3: return round.getPlayer3Hand();
-            case 4: return round.getPlayer4Hand();
-            default: return new ArrayList<>();
-        }
+        return switch (seat) {
+            case 1 -> round.getPlayer1Hand();
+            case 2 -> round.getPlayer2Hand();
+            case 3 -> round.getPlayer3Hand();
+            case 4 -> round.getPlayer4Hand();
+            default -> new ArrayList<>();
+        };
     }
 
     private int getHandCount(List<String> tiles) {
@@ -910,7 +1345,7 @@ public class MahjongServiceImpl implements IMahjongService {
     private void updateUserStats(MahjongGame game) {
         try {
             // 获取游戏中所有局的统计
-            List<MahjongRound> rounds = roundMapper.selectByGameId(game.getId());
+            List<MahjongRound> rounds = findAllRounds(game.getId());
 
             // 统计每个玩家的数据
             Map<Long, PlayerStatsData> statsMap = new HashMap<>();
@@ -1008,13 +1443,13 @@ public class MahjongServiceImpl implements IMahjongService {
     }
 
     private Long getPlayerIdBySeat(MahjongGame game, int seat) {
-        switch (seat) {
-            case 1: return game.getPlayer1Id();
-            case 2: return game.getPlayer2Id();
-            case 3: return game.getPlayer3Id();
-            case 4: return game.getPlayer4Id();
-            default: return null;
-        }
+        return switch (seat) {
+            case 1 -> game.getPlayer1Id();
+            case 2 -> game.getPlayer2Id();
+            case 3 -> game.getPlayer3Id();
+            case 4 -> game.getPlayer4Id();
+            default -> null;
+        };
     }
 
     private void updatePlayerScore(Map<Long, PlayerStatsData> statsMap, Long playerId, Integer score) {

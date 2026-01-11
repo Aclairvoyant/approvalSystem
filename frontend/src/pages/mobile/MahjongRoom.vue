@@ -108,11 +108,15 @@
         :player4-flowers="roundData?.player4Flowers"
         :player4-discards="roundData?.player4Discards"
         :available-actions="roundData?.availableActions || []"
+        :chi-options="roundData?.chiOptions || []"
+        :last-discard-tile="roundData?.lastTile"
+        :last-action-seat="roundData?.lastActionSeat"
         :show-result="showResult"
         :result-title="resultTitle"
         :score-changes="scoreChanges"
         :is-game-over="isGameOver"
         @pass="handlePass"
+        @chi="handleChi"
         @pong="handlePong"
         @kong="handleKong"
         @hu="handleHu"
@@ -171,20 +175,28 @@ const showResult = ref(false)
 const resultTitle = ref('')
 const scoreChanges = ref<Record<string, number>>({})
 const isGameOver = ref(false)
+const isActionPending = ref(false) // 防止重复操作
 
 // 计算属性
 const gameStatus = computed(() => gameState.value?.gameStatus || 1)
 const mySeat = computed(() => {
-  const userId = userStore.userInfo?.id
-  if (gameState.value?.player1Id === userId) return 1
-  if (gameState.value?.player2Id === userId) return 2
-  if (gameState.value?.player3Id === userId) return 3
-  if (gameState.value?.player4Id === userId) return 4
+  const userId = Number(userStore.userId)
+  const p1 = Number(gameState.value?.player1Id)
+  const p2 = Number(gameState.value?.player2Id)
+  const p3 = Number(gameState.value?.player3Id)
+  const p4 = Number(gameState.value?.player4Id)
+
+  console.log('[MahjongRoom] mySeat计算: userId=', userId, 'player1Id=', p1, 'player2Id=', p2)
+
+  if (p1 && p1 === userId) return 1
+  if (p2 && p2 === userId) return 2
+  if (p3 && p3 === userId) return 3
+  if (p4 && p4 === userId) return 4
   return 0
 })
 
 const isRoomOwner = computed(() => {
-  return gameState.value?.player1Id === userStore.userInfo?.id
+  return Number(gameState.value?.player1Id) === Number(userStore.userId)
 })
 
 const canStart = computed(() => {
@@ -210,6 +222,19 @@ onUnmounted(() => {
 async function loadGameState() {
   try {
     const state = await mahjongStore.getGameState(gameId.value)
+    console.log('[MahjongRoom] loadGameState:', state)
+    console.log('[MahjongRoom] 服务器返回的 currentUserId:', state?.currentUserId)
+    console.log('[MahjongRoom] 本地 userStore.userId:', userStore.userId)
+    console.log('[MahjongRoom] mySeat:', state?.currentRoundData?.mySeat)
+    console.log('[MahjongRoom] myHand:', state?.currentRoundData?.myHand)
+    console.log('[MahjongRoom] availableActions:', state?.currentRoundData?.availableActions)
+
+    // 验证：如果服务器返回的userId和本地不一致，说明有问题
+    if (state?.currentUserId && Number(state.currentUserId) !== Number(userStore.userId)) {
+      console.error('[MahjongRoom] 警告: 服务器userId与本地userId不匹配!',
+        'server:', state.currentUserId, 'local:', userStore.userId)
+    }
+
     gameState.value = state
     roundData.value = state.currentRoundData
   } catch (e: any) {
@@ -221,33 +246,36 @@ async function loadGameState() {
 function connectWebSocket() {
   connectMahjongWebSocket(gameId.value, {
     onGameState: (state) => {
-      if (state === null) {
-        // 收到更新通知，重新加载状态
-        loadGameState()
-      } else {
-        gameState.value = state
-        roundData.value = state.currentRoundData
+      // 收到状态更新通知，始终重新加载个人化数据
+      if (state && state.type === 'GAME_STATE') {
+        // 可以先更新基础信息（不含个人数据）
+        updateGameStateFromBroadcast(state)
       }
+      // 始终重新加载以获取个人化数据（手牌、可用操作等）
+      loadGameState()
     },
     onPlayerJoined: (data) => {
-      // 有新玩家加入，更新状态
-      if (data.gameState) {
-        gameState.value = data.gameState
-        roundData.value = data.gameState.currentRoundData
-      } else {
-        loadGameState()
-      }
+      // 有新玩家加入，重新加载个人化状态
+      // 注意：不要直接使用 data.gameState，因为它可能是为其他用户准备的
+      console.log('[MahjongRoom] Player joined:', data.playerName)
+      loadGameState()
     },
     onPlayerLeft: (data) => {
+      // 有玩家离开
+      console.log('[MahjongRoom] Player left:', data)
+      // 如果游戏被取消（房主离开且无其他玩家），跳转回大厅
+      if (data.gameStatus === 4) { // CANCELLED status = 4
+        showToast('房间已解散')
+        router.replace('/mobile/mahjong')
+        return
+      }
+      // 重新加载个人化状态
       loadGameState()
     },
     onGameStarted: (data) => {
-      if (data.gameState) {
-        gameState.value = data.gameState
-        roundData.value = data.gameState.currentRoundData
-      } else {
-        loadGameState()
-      }
+      // 游戏开始，重新加载个人化状态
+      console.log('[MahjongRoom] Game started')
+      loadGameState()
     },
     onActionExecuted: (data) => {
       loadGameState()
@@ -265,6 +293,45 @@ function connectWebSocket() {
       showToast(error)
     }
   })
+}
+
+// 从广播数据更新游戏状态
+function updateGameStateFromBroadcast(data: any) {
+  if (!gameState.value) {
+    gameState.value = {} as any
+  }
+  // 更新基本信息
+  if (data.gameId) gameState.value.id = data.gameId
+  if (data.gameCode) gameState.value.gameCode = data.gameCode
+  if (data.gameStatus !== undefined) gameState.value.gameStatus = data.gameStatus
+  if (data.currentRound !== undefined) gameState.value.currentRound = data.currentRound
+  if (data.playerCount !== undefined) gameState.value.playerCount = data.playerCount
+  if (data.dealerSeat !== undefined) gameState.value.dealerSeat = data.dealerSeat
+  if (data.totalRounds !== undefined) gameState.value.totalRounds = data.totalRounds
+
+  // 更新玩家ID信息（关键！）
+  gameState.value.player1Id = data.player1Id
+  gameState.value.player2Id = data.player2Id
+  gameState.value.player3Id = data.player3Id
+  gameState.value.player4Id = data.player4Id
+
+  // 更新玩家名称和头像
+  if (data.player1Name) gameState.value.player1Name = data.player1Name
+  if (data.player1Avatar) gameState.value.player1Avatar = data.player1Avatar
+  if (data.player2Name) gameState.value.player2Name = data.player2Name
+  if (data.player2Avatar) gameState.value.player2Avatar = data.player2Avatar
+  if (data.player3Name) gameState.value.player3Name = data.player3Name
+  if (data.player3Avatar) gameState.value.player3Avatar = data.player3Avatar
+  if (data.player4Name) gameState.value.player4Name = data.player4Name
+  if (data.player4Avatar) gameState.value.player4Avatar = data.player4Avatar
+
+  // 更新积分
+  if (data.player1Score !== undefined) gameState.value.player1Score = data.player1Score
+  if (data.player2Score !== undefined) gameState.value.player2Score = data.player2Score
+  if (data.player3Score !== undefined) gameState.value.player3Score = data.player3Score
+  if (data.player4Score !== undefined) gameState.value.player4Score = data.player4Score
+
+  console.log('[MahjongRoom] Updated game state from broadcast:', gameState.value)
 }
 
 // 获取玩家信息
@@ -316,25 +383,65 @@ async function startGame() {
   }
 }
 
-// 游戏操作
+// 游戏操作 - 带防重复保护
 async function handlePass() {
-  await mahjongStore.executeAction(gameId.value, { actionType: 'PASS' })
+  if (isActionPending.value) return
+  isActionPending.value = true
+  try {
+    await mahjongStore.executeAction(gameId.value, { actionType: 'PASS' })
+  } finally {
+    isActionPending.value = false
+  }
 }
 
 async function handlePong() {
-  await mahjongStore.executeAction(gameId.value, { actionType: 'PONG' })
+  if (isActionPending.value) return
+  isActionPending.value = true
+  try {
+    await mahjongStore.executeAction(gameId.value, { actionType: 'PONG' })
+  } finally {
+    isActionPending.value = false
+  }
+}
+
+async function handleChi(chiTiles: string[]) {
+  if (isActionPending.value) return
+  isActionPending.value = true
+  try {
+    await mahjongStore.executeAction(gameId.value, { actionType: 'CHI', chiTiles })
+  } finally {
+    isActionPending.value = false
+  }
 }
 
 async function handleKong(tile: string, type: string) {
-  await mahjongStore.executeAction(gameId.value, { actionType: type, tile })
+  if (isActionPending.value) return
+  isActionPending.value = true
+  try {
+    await mahjongStore.executeAction(gameId.value, { actionType: type, tile })
+  } finally {
+    isActionPending.value = false
+  }
 }
 
 async function handleHu() {
-  await mahjongStore.executeAction(gameId.value, { actionType: 'HU' })
+  if (isActionPending.value) return
+  isActionPending.value = true
+  try {
+    await mahjongStore.executeAction(gameId.value, { actionType: 'HU' })
+  } finally {
+    isActionPending.value = false
+  }
 }
 
 async function handleDiscard(tile: string) {
-  await mahjongStore.executeAction(gameId.value, { actionType: 'DISCARD', tile })
+  if (isActionPending.value) return
+  isActionPending.value = true
+  try {
+    await mahjongStore.executeAction(gameId.value, { actionType: 'DISCARD', tile })
+  } finally {
+    isActionPending.value = false
+  }
 }
 
 async function handleNextRound() {

@@ -428,3 +428,5 @@ CREATE TABLE mahjong_user_stats (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_mahjong_stats_score (total_score)
 ) COMMENT='麻将用户统计表';
+
+ALTER TABLE mahjong_rounds ADD COLUMN wall_remaining INT DEFAULT 0 COMMENT '牌墙剩余数量' AFTER wall_tiles;

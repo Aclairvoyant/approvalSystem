@@ -55,6 +55,10 @@ public class MahjongRound {
     @TableField(value = "wall_tiles", typeHandler = JacksonTypeHandler.class)
     private List<String> wallTiles;
 
+    /** 牌墙剩余数量 */
+    @TableField("wall_remaining")
+    private Integer wallRemaining;
+
     /** 玩家1手牌 */
     @TableField(value = "player1_hand", typeHandler = JacksonTypeHandler.class)
     private List<String> player1Hand;

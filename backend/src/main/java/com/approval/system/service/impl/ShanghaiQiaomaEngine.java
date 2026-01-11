@@ -213,18 +213,26 @@ public class ShanghaiQiaomaEngine implements IMahjongEngine {
         boolean hasFlower = true;
         while (hasFlower && !wall.isEmpty()) {
             hasFlower = false;
-            Iterator<MahjongTile> it = hand.iterator();
-            while (it.hasNext()) {
-                MahjongTile tile = it.next();
+
+            // 找出手牌中的第一张花牌
+            MahjongTile flowerTile = null;
+            for (MahjongTile tile : hand) {
                 if (tile.getType() == MahjongTileType.HUA) {
-                    it.remove();
-                    flowers.add(tile);
-                    // 补牌
-                    if (!wall.isEmpty()) {
-                        MahjongTile newTile = wall.remove(wall.size() - 1); // 从牌墙尾部补
-                        hand.add(newTile);
-                        hasFlower = true;
-                    }
+                    flowerTile = tile;
+                    break;
+                }
+            }
+
+            // 如果找到花牌，移除并补牌
+            if (flowerTile != null) {
+                hand.remove(flowerTile);
+                flowers.add(flowerTile);
+
+                // 补牌
+                if (!wall.isEmpty()) {
+                    MahjongTile newTile = wall.remove(wall.size() - 1); // 从牌墙尾部补
+                    hand.add(newTile);
+                    hasFlower = true; // 继续检查新补的牌是否是花牌
                 }
             }
         }
@@ -267,12 +275,22 @@ public class ShanghaiQiaomaEngine implements IMahjongEngine {
 
     @Override
     public int getWallRemaining() {
-        return wall.size();
+        return wall != null ? wall.size() : 0;
+    }
+
+    @Override
+    public List<MahjongTile> getWall() {
+        return wall != null ? new ArrayList<>(wall) : new ArrayList<>();
+    }
+
+    @Override
+    public void setWall(List<MahjongTile> wall) {
+        this.wall = wall != null ? new ArrayList<>(wall) : new ArrayList<>();
     }
 
     @Override
     public boolean canDraw(int seat) {
-        return !wall.isEmpty();
+        return wall != null && !wall.isEmpty();
     }
 
     @Override
@@ -292,6 +310,18 @@ public class ShanghaiQiaomaEngine implements IMahjongEngine {
                 .filter(t -> t.equals(discardedTile))
                 .count();
         return count >= 2;
+    }
+
+    @Override
+    public List<List<String>> getChiOptions(int seat, MahjongTile discardedTile, int fromSeat) {
+        // 敲麻不能吃牌
+        return new ArrayList<>();
+    }
+
+    @Override
+    public void chi(int seat, MahjongTile discardedTile, int fromSeat, List<MahjongTile> chiTiles) {
+        // 敲麻不能吃牌，空实现
+        throw new UnsupportedOperationException("敲麻规则不支持吃牌");
     }
 
     @Override
@@ -391,8 +421,10 @@ public class ShanghaiQiaomaEngine implements IMahjongEngine {
                 actions.add(MahjongActionType.BU_KONG);
             }
 
-            // 必须出牌(如果手牌是14张)
-            if (hand != null && hand.size() == 14) {
+            // 检查是否需要出牌
+            // 手牌数量为 3n+2 时需要出牌（14, 11, 8, 5, 2）
+            // 14张=正常摸牌后，11张=碰/杠后，8张=两次碰后，以此类推
+            if (hand != null && !hand.isEmpty() && hand.size() % 3 == 2) {
                 actions.add(MahjongActionType.DISCARD);
             }
         } else if (discardedTile != null) {
@@ -418,9 +450,11 @@ public class ShanghaiQiaomaEngine implements IMahjongEngine {
 
     @Override
     public MahjongTile draw(int seat) {
-        if (wall.isEmpty()) return null;
+        if (wall == null || wall.isEmpty()) return null;
 
         MahjongTile tile = wall.remove(0);
+        if (tile == null) return null;  // 防止牌墙中有空元素
+
         playerHands.get(seat).add(tile);
         lastDrawnTile = tile;
         lastActionWasKong = false;
@@ -432,7 +466,8 @@ public class ShanghaiQiaomaEngine implements IMahjongEngine {
             return buHua(seat);
         }
 
-        sortHand(seat);
+        // 不排序手牌，让摸到的牌保持在最右边
+        // sortHand(seat);
         return tile;
     }
 
@@ -445,6 +480,9 @@ public class ShanghaiQiaomaEngine implements IMahjongEngine {
         lastDiscardedTile = tile;
         lastDiscardSeat = seat;
         lastActionWasKong = false;
+
+        // 出牌后对手牌排序
+        sortHand(seat);
     }
 
     @Override
@@ -522,7 +560,8 @@ public class ShanghaiQiaomaEngine implements IMahjongEngine {
                 return buHua(seat);
             }
 
-            sortHand(seat);
+            // 不排序，让补到的牌显示在最右边
+            // sortHand(seat);
             return newTile;
         }
 
@@ -566,7 +605,8 @@ public class ShanghaiQiaomaEngine implements IMahjongEngine {
                 return buHua(seat);
             }
 
-            sortHand(seat);
+            // 不排序，让补到的牌显示在最右边
+            // sortHand(seat);
             return newTile;
         }
 
@@ -605,7 +645,8 @@ public class ShanghaiQiaomaEngine implements IMahjongEngine {
                 return buHua(seat);
             }
 
-            sortHand(seat);
+            // 不排序，让补到的牌显示在最右边
+            // sortHand(seat);
             return newTile;
         }
 
@@ -625,7 +666,8 @@ public class ShanghaiQiaomaEngine implements IMahjongEngine {
 
         playerHands.get(seat).add(tile);
         lastDrawnTile = tile;
-        sortHand(seat);
+        // 不排序，让补到的牌显示在最右边
+        // sortHand(seat);
         return tile;
     }
 
@@ -794,7 +836,7 @@ public class ShanghaiQiaomaEngine implements IMahjongEngine {
 
     /**
      * 检查牌是否能组成指定数量的组(刻子或顺子)
-     * 注: 上海麻将不能吃，所以只检查刻子
+     * 注: 上海敲麻不能吃牌，但胡牌时可以用顺子
      */
     protected boolean canFormGroups(List<MahjongTile> tiles, int groupCount) {
         if (groupCount == 0) {
@@ -808,17 +850,30 @@ public class ShanghaiQiaomaEngine implements IMahjongEngine {
         List<MahjongTile> sorted = new ArrayList<>(tiles);
         Collections.sort(sorted);
 
-        // 尝试组成刻子
-        Map<String, Long> countMap = sorted.stream()
-                .collect(Collectors.groupingBy(MahjongTile::toCode, Collectors.counting()));
+        MahjongTile first = sorted.get(0);
 
-        for (Map.Entry<String, Long> entry : countMap.entrySet()) {
-            if (entry.getValue() >= 3) {
+        // 尝试组成刻子
+        long sameCount = sorted.stream().filter(t -> t.equals(first)).count();
+        if (sameCount >= 3) {
+            List<MahjongTile> remaining = new ArrayList<>(sorted);
+            for (int i = 0; i < 3; i++) {
+                removeTileFromHand(remaining, first);
+            }
+            if (canFormGroups(remaining, groupCount - 1)) {
+                return true;
+            }
+        }
+
+        // 尝试组成顺子（只有数牌可以）
+        if (first.isNumberTile() && first.getNumber() <= 7) {
+            MahjongTile second = new MahjongTile(first.getType(), first.getNumber() + 1);
+            MahjongTile third = new MahjongTile(first.getType(), first.getNumber() + 2);
+
+            if (containsTile(sorted, second) && containsTile(sorted, third)) {
                 List<MahjongTile> remaining = new ArrayList<>(sorted);
-                MahjongTile tile = MahjongTile.fromCode(entry.getKey());
-                for (int i = 0; i < 3; i++) {
-                    removeTileFromHand(remaining, tile);
-                }
+                removeTileFromHand(remaining, first);
+                removeTileFromHand(remaining, second);
+                removeTileFromHand(remaining, third);
                 if (canFormGroups(remaining, groupCount - 1)) {
                     return true;
                 }

@@ -21,6 +21,7 @@ public class MahjongGameResponse {
     // ========== 基础信息 ==========
     private Long id;
     private String gameCode;
+    private Long currentUserId;  // 当前请求的用户ID（用于验证）
 
     // ========== 游戏配置 ==========
     private Integer ruleType;
@@ -124,6 +125,9 @@ public class MahjongGameResponse {
 
         // 可执行的操作
         private List<String> availableActions;
+
+        // 吃牌选项（多种吃法）
+        private List<List<String>> chiOptions;
 
         // 结算信息（局结束时）
         private Integer winnerSeat;

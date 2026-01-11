@@ -220,6 +220,24 @@ public class ShanghaiBaidaEngine extends ShanghaiQiaomaEngine {
     }
 
     /**
+     * 设置并恢复百搭牌状态（用于状态恢复）
+     * @param wildTileCode 百搭牌编码
+     * @param guideTileCode 引导牌编码
+     */
+    public void restoreWildTile(String wildTileCode, String guideTileCode) {
+        if (wildTileCode != null && !wildTileCode.isEmpty()) {
+            this.wildTile = MahjongTile.fromCode(wildTileCode);
+        }
+        if (guideTileCode != null && !guideTileCode.isEmpty()) {
+            this.guideTile = MahjongTile.fromCode(guideTileCode);
+        }
+        // 重新标记所有百搭牌
+        if (this.wildTile != null) {
+            markWildTiles();
+        }
+    }
+
+    /**
      * 获取玩家手中百搭牌数量
      */
     public int getWildTileCount(int seat) {
@@ -367,7 +385,7 @@ public class ShanghaiBaidaEngine extends ShanghaiQiaomaEngine {
     }
 
     /**
-     * 尝试用百搭组成指定数量的组
+     * 尝试用百搭组成指定数量的组（支持刻子和顺子）
      */
     private boolean tryFormGroupsWithWild(Map<String, Long> countMap, int wildCount, int needGroups) {
         if (needGroups == 0) {
@@ -376,52 +394,114 @@ public class ShanghaiBaidaEngine extends ShanghaiQiaomaEngine {
             return remaining == 0;
         }
 
-        // 找出数量最多的牌
-        String maxTileCode = null;
-        long maxCount = 0;
-        for (Map.Entry<String, Long> entry : countMap.entrySet()) {
-            if (entry.getValue() > maxCount) {
-                maxCount = entry.getValue();
-                maxTileCode = entry.getKey();
-            }
+        // 清理count为0的项
+        countMap = countMap.entrySet().stream()
+                .filter(e -> e.getValue() > 0)
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+        if (countMap.isEmpty()) {
+            // 没有普通牌了，尝试用纯百搭组成剩余的组
+            return wildCount >= needGroups * 3;
         }
 
-        if (maxTileCode == null && wildCount >= 3) {
-            // 纯百搭组成刻子
-            return tryFormGroupsWithWild(countMap, wildCount - 3, needGroups - 1);
-        }
+        // 找出第一张牌进行尝试
+        String firstTileCode = countMap.keySet().iterator().next();
+        MahjongTile firstTile = MahjongTile.fromCode(firstTileCode);
+        long firstCount = countMap.get(firstTileCode);
 
-        if (maxTileCode == null) {
-            return false;
-        }
-
-        // 尝试组成刻子
-        if (maxCount >= 3) {
+        // 尝试1: 组成刻子
+        if (firstCount >= 3) {
             Map<String, Long> newMap = new HashMap<>(countMap);
-            newMap.put(maxTileCode, maxCount - 3);
+            newMap.put(firstTileCode, firstCount - 3);
             if (tryFormGroupsWithWild(newMap, wildCount, needGroups - 1)) {
                 return true;
             }
         }
 
-        // 尝试用百搭补成刻子
-        if (maxCount >= 2 && wildCount >= 1) {
+        // 尝试2: 用百搭补成刻子
+        if (firstCount >= 2 && wildCount >= 1) {
             Map<String, Long> newMap = new HashMap<>(countMap);
-            newMap.put(maxTileCode, maxCount - 2);
+            newMap.put(firstTileCode, firstCount - 2);
             if (tryFormGroupsWithWild(newMap, wildCount - 1, needGroups - 1)) {
                 return true;
             }
         }
-
-        if (maxCount >= 1 && wildCount >= 2) {
+        if (firstCount >= 1 && wildCount >= 2) {
             Map<String, Long> newMap = new HashMap<>(countMap);
-            newMap.put(maxTileCode, maxCount - 1);
+            newMap.put(firstTileCode, firstCount - 1);
             if (tryFormGroupsWithWild(newMap, wildCount - 2, needGroups - 1)) {
                 return true;
             }
         }
 
-        // 纯百搭刻子
+        // 尝试3: 组成顺子（只有数牌可以组成顺子）
+        if (firstTile != null && firstTile.isNumberTile() && firstTile.getNumber() <= 7) {
+            MahjongTileType type = firstTile.getType();
+            int num = firstTile.getNumber();
+
+            String code1 = firstTileCode;
+            String code2 = (num + 1) + type.name();
+            String code3 = (num + 2) + type.name();
+
+            long count1 = countMap.getOrDefault(code1, 0L);
+            long count2 = countMap.getOrDefault(code2, 0L);
+            long count3 = countMap.getOrDefault(code3, 0L);
+
+            // 完整顺子
+            if (count1 >= 1 && count2 >= 1 && count3 >= 1) {
+                Map<String, Long> newMap = new HashMap<>(countMap);
+                newMap.put(code1, count1 - 1);
+                newMap.put(code2, count2 - 1);
+                newMap.put(code3, count3 - 1);
+                if (tryFormGroupsWithWild(newMap, wildCount, needGroups - 1)) {
+                    return true;
+                }
+            }
+
+            // 用1张百搭补顺子
+            if (wildCount >= 1) {
+                // 缺第三张
+                if (count1 >= 1 && count2 >= 1 && count3 == 0) {
+                    Map<String, Long> newMap = new HashMap<>(countMap);
+                    newMap.put(code1, count1 - 1);
+                    newMap.put(code2, count2 - 1);
+                    if (tryFormGroupsWithWild(newMap, wildCount - 1, needGroups - 1)) {
+                        return true;
+                    }
+                }
+                // 缺第二张
+                if (count1 >= 1 && count2 == 0 && count3 >= 1) {
+                    Map<String, Long> newMap = new HashMap<>(countMap);
+                    newMap.put(code1, count1 - 1);
+                    newMap.put(code3, count3 - 1);
+                    if (tryFormGroupsWithWild(newMap, wildCount - 1, needGroups - 1)) {
+                        return true;
+                    }
+                }
+                // 缺第一张
+                if (count1 == 0 && count2 >= 1 && count3 >= 1) {
+                    Map<String, Long> newMap = new HashMap<>(countMap);
+                    newMap.put(code2, count2 - 1);
+                    newMap.put(code3, count3 - 1);
+                    if (tryFormGroupsWithWild(newMap, wildCount - 1, needGroups - 1)) {
+                        return true;
+                    }
+                }
+            }
+
+            // 用2张百搭补顺子
+            if (wildCount >= 2) {
+                if (count1 >= 1) {
+                    Map<String, Long> newMap = new HashMap<>(countMap);
+                    newMap.put(code1, count1 - 1);
+                    if (tryFormGroupsWithWild(newMap, wildCount - 2, needGroups - 1)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // 尝试4: 纯百搭组成一组
         if (wildCount >= 3) {
             if (tryFormGroupsWithWild(countMap, wildCount - 3, needGroups - 1)) {
                 return true;
@@ -619,6 +699,107 @@ public class ShanghaiBaidaEngine extends ShanghaiQiaomaEngine {
     }
 
     // ==================== 碰杠规则(百搭不能碰杠) ====================
+
+    // ==================== 吃牌规则(百搭麻将可以吃上家的牌) ====================
+
+    /**
+     * 判断是否是上家
+     * 逆时针顺序: 1->4->3->2->1
+     * seat的上家是 (seat % playerCount) + 1
+     */
+    private boolean isUpperSeat(int seat, int fromSeat) {
+        // 逆时针：1的上家是2，2的上家是3，3的上家是4，4的上家是1
+        int upperSeat = (seat % playerCount) + 1;
+        return fromSeat == upperSeat;
+    }
+
+    @Override
+    public List<List<String>> getChiOptions(int seat, MahjongTile discardedTile, int fromSeat) {
+        List<List<String>> options = new ArrayList<>();
+
+        // 只能吃上家的牌
+        if (!isUpperSeat(seat, fromSeat)) {
+            return options;
+        }
+
+        // 只有数牌可以吃
+        if (discardedTile == null || !discardedTile.isNumberTile()) {
+            return options;
+        }
+
+        List<MahjongTile> hand = playerHands.get(seat);
+        if (hand == null) return options;
+
+        MahjongTileType type = discardedTile.getType();
+        int num = discardedTile.getNumber();
+
+        // 检查三种吃法：
+        // 1. 吃的牌在左边（如吃3，手中有4,5）: num+1, num+2
+        // 2. 吃的牌在中间（如吃4，手中有3,5）: num-1, num+1
+        // 3. 吃的牌在右边（如吃5，手中有3,4）: num-2, num-1
+
+        // 检查吃法1: 吃的牌在左边
+        if (num <= 7) {
+            MahjongTile tile1 = new MahjongTile(type, num + 1);
+            MahjongTile tile2 = new MahjongTile(type, num + 2);
+            if (containsTile(hand, tile1) && containsTile(hand, tile2)) {
+                List<String> option = Arrays.asList(tile1.toCode(), tile2.toCode());
+                options.add(option);
+            }
+        }
+
+        // 检查吃法2: 吃的牌在中间
+        if (num >= 2 && num <= 8) {
+            MahjongTile tile1 = new MahjongTile(type, num - 1);
+            MahjongTile tile2 = new MahjongTile(type, num + 1);
+            if (containsTile(hand, tile1) && containsTile(hand, tile2)) {
+                List<String> option = Arrays.asList(tile1.toCode(), tile2.toCode());
+                options.add(option);
+            }
+        }
+
+        // 检查吃法3: 吃的牌在右边
+        if (num >= 3) {
+            MahjongTile tile1 = new MahjongTile(type, num - 2);
+            MahjongTile tile2 = new MahjongTile(type, num - 1);
+            if (containsTile(hand, tile1) && containsTile(hand, tile2)) {
+                List<String> option = Arrays.asList(tile1.toCode(), tile2.toCode());
+                options.add(option);
+            }
+        }
+
+        return options;
+    }
+
+    @Override
+    public void chi(int seat, MahjongTile discardedTile, int fromSeat, List<MahjongTile> chiTiles) {
+        List<MahjongTile> hand = playerHands.get(seat);
+
+        // 从手牌移除用于吃的两张牌
+        for (MahjongTile tile : chiTiles) {
+            removeTileFromHand(hand, tile);
+        }
+
+        // 创建吃牌组合
+        List<MahjongTile> meldTiles = new ArrayList<>();
+        meldTiles.add(discardedTile.copy());
+        for (MahjongTile tile : chiTiles) {
+            meldTiles.add(tile.copy());
+        }
+        // 排序使顺子有序
+        Collections.sort(meldTiles);
+
+        Meld meld = new Meld(Meld.MeldType.CHI, meldTiles, fromSeat, false);
+        playerMelds.get(seat).add(meld);
+
+        // 从出牌者弃牌中移除
+        List<MahjongTile> discards = playerDiscards.get(fromSeat);
+        if (!discards.isEmpty()) {
+            discards.remove(discards.size() - 1);
+        }
+
+        lastActionWasKong = false;
+    }
 
     @Override
     public boolean canPong(int seat, MahjongTile discardedTile) {

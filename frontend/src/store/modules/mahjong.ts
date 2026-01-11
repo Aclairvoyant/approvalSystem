@@ -73,6 +73,7 @@ interface MahjongRound {
   lastAction?: string
   lastActionSeat?: number
   availableActions?: string[]
+  chiOptions?: string[][]
   winnerSeat?: number
   huType?: string
   fanCount?: number
@@ -80,7 +81,7 @@ interface MahjongRound {
 }
 
 interface MeldInfo {
-  type: 'PONG' | 'MING_KONG' | 'AN_KONG' | 'BU_KONG'
+  type: 'CHI' | 'PONG' | 'MING_KONG' | 'AN_KONG' | 'BU_KONG'
   tiles: string[]
   concealed?: boolean
 }
@@ -98,6 +99,7 @@ interface CreateGameRequest {
 interface ActionRequest {
   actionType: string
   tile?: string
+  chiTiles?: string[]
   extraData?: string
 }
 

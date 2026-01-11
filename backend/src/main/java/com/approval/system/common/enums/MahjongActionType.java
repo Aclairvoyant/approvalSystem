@@ -11,7 +11,8 @@ public enum MahjongActionType {
     DRAW("DRAW", "摸牌"),
     DISCARD("DISCARD", "出牌"),
 
-    // 碰杠操作
+    // 吃碰杠操作
+    CHI("CHI", "吃"),
     PONG("PONG", "碰"),
     MING_KONG("MING_KONG", "明杠"),
     AN_KONG("AN_KONG", "暗杠"),

@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,6 +17,7 @@ import java.util.List;
  * 麻将游戏控制器
  */
 @Tag(name = "麻将游戏", description = "麻将游戏相关接口")
+@Slf4j
 @RestController
 @RequestMapping("/api/mahjong")
 @RequiredArgsConstructor
@@ -69,7 +71,10 @@ public class MahjongController {
             @PathVariable Long gameId,
             Authentication authentication) {
         Long userId = Long.parseLong(authentication.getName());
+        log.info("获取游戏状态请求: gameId={}, userId={}", gameId, userId);
         MahjongGameResponse response = mahjongService.getGameState(gameId, userId);
+        log.info("返回游戏状态: gameId={}, userId={}, mySeat={}", gameId, userId,
+                response.getCurrentRoundData() != null ? response.getCurrentRoundData().getMySeat() : "无当前局");
         return ApiResponse.success(response);
     }
 

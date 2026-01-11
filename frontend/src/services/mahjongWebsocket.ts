@@ -93,9 +93,9 @@ function handleMessage(message: Message, callbacks: MahjongWebSocketCallbacks) {
 
     switch (data.type) {
       case 'GAME_STATE':
-        if (data.gameState) {
-          callbacks.onGameState?.(data.gameState)
-        }
+        // 直接使用广播的游戏状态数据
+        // 后端现在发送完整的游戏状态信息
+        callbacks.onGameState?.(data)
         break
 
       case 'GAME_STATE_UPDATE':

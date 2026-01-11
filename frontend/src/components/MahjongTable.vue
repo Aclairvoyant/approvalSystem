@@ -115,10 +115,12 @@
     <MahjongActionBar
       :available-actions="availableActions"
       :selected-tile="selectedTile"
+      :chi-options="chiOptions"
       :an-kong-options="anKongOptions"
       :bu-kong-options="buKongOptions"
       :last-discard-tile="lastDiscardTile"
       @pass="$emit('pass')"
+      @chi="(chiTiles) => $emit('chi', chiTiles)"
       @pong="$emit('pong')"
       @kong="(tile, type) => $emit('kong', tile, type)"
       @hu="$emit('hu')"
@@ -159,7 +161,7 @@ import MahjongDiscardArea from './MahjongDiscardArea.vue'
 import MahjongActionBar from './MahjongActionBar.vue'
 
 interface Meld {
-  type: 'PONG' | 'MING_KONG' | 'AN_KONG' | 'BU_KONG'
+  type: 'CHI' | 'PONG' | 'MING_KONG' | 'AN_KONG' | 'BU_KONG'
   tiles: string[]
   concealed?: boolean
 }
@@ -215,6 +217,7 @@ interface Props {
 
   // 操作相关
   availableActions?: string[]
+  chiOptions?: string[][]
   anKongOptions?: string[]
   buKongOptions?: string[]
   lastDiscardTile?: string
@@ -265,6 +268,7 @@ const props = withDefaults(defineProps<Props>(), {
   player4Flowers: () => [],
   player4Discards: () => [],
   availableActions: () => [],
+  chiOptions: () => [],
   anKongOptions: () => [],
   buKongOptions: () => [],
   lastDiscardTile: '',
@@ -277,6 +281,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   pass: []
+  chi: [chiTiles: string[]]
   pong: []
   kong: [tile: string, type: string]
   hu: []

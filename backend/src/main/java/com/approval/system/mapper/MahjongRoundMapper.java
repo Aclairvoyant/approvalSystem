@@ -4,44 +4,32 @@ import com.approval.system.entity.MahjongRound;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
-import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
 
 /**
  * 麻将单局记录Mapper
+ * 注意：JSON字段需要使用BaseMapper的方法（如selectOne/selectList）
+ * 才能正确应用JacksonTypeHandler，不要使用@Select注解
  */
 @Mapper
 public interface MahjongRoundMapper extends BaseMapper<MahjongRound> {
 
     /**
      * 获取游戏的当前进行中的局
+     * 注意：此方法需要在Service层使用selectOne + LambdaQueryWrapper实现
      */
-    @Select("SELECT * FROM mahjong_rounds " +
-            "WHERE game_id = #{gameId} AND round_status = 1 " +
-            "ORDER BY round_number DESC LIMIT 1")
-    MahjongRound selectCurrentRound(@Param("gameId") Long gameId);
+    default MahjongRound selectCurrentRound(Long gameId) {
+        // 需要在Service层实现
+        return null;
+    }
 
     /**
      * 获取游戏的最后一局
+     * 注意：此方法需要在Service层使用selectOne + LambdaQueryWrapper实现
      */
-    @Select("SELECT * FROM mahjong_rounds " +
-            "WHERE game_id = #{gameId} " +
-            "ORDER BY round_number DESC LIMIT 1")
-    MahjongRound selectLastRound(@Param("gameId") Long gameId);
-
-    /**
-     * 获取游戏的所有局
-     */
-    @Select("SELECT * FROM mahjong_rounds " +
-            "WHERE game_id = #{gameId} " +
-            "ORDER BY round_number ASC")
-    List<MahjongRound> selectByGameId(@Param("gameId") Long gameId);
-
-    /**
-     * 获取指定局
-     */
-    @Select("SELECT * FROM mahjong_rounds " +
-            "WHERE game_id = #{gameId} AND round_number = #{roundNumber}")
-    MahjongRound selectByGameIdAndRoundNumber(@Param("gameId") Long gameId, @Param("roundNumber") Integer roundNumber);
+    default MahjongRound selectLastRound(Long gameId) {
+        // 需要在Service层实现
+        return null;
+    }
 }

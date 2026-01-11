@@ -11,6 +11,16 @@
         过
       </van-button>
 
+      <!-- 吃 -->
+      <van-button
+        v-if="canChi"
+        type="success"
+        size="normal"
+        @click="handleChi"
+      >
+        吃
+      </van-button>
+
       <!-- 碰 -->
       <van-button
         v-if="canPong"
@@ -60,6 +70,14 @@
       cancel-text="取消"
       @select="onKongSelect"
     />
+
+    <!-- 吃牌选择弹窗 -->
+    <van-action-sheet
+      v-model:show="showChiPicker"
+      :actions="chiPickerOptions"
+      cancel-text="取消"
+      @select="onChiSelect"
+    />
   </div>
 </template>
 
@@ -78,6 +96,7 @@ interface Props {
   anKongOptions?: string[]     // 可以暗杠的牌
   buKongOptions?: string[]     // 可以补杠的牌
   lastDiscardTile?: string     // 最后打出的牌（用于明杠）
+  chiOptions?: string[][]      // 吃牌选项（多种吃法，每种吃法为两张牌）
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -85,24 +104,28 @@ const props = withDefaults(defineProps<Props>(), {
   selectedTile: null,
   anKongOptions: () => [],
   buKongOptions: () => [],
-  lastDiscardTile: ''
+  lastDiscardTile: '',
+  chiOptions: () => []
 })
 
 const emit = defineEmits<{
   pass: []
   pong: []
+  chi: [chiTiles: string[]]
   kong: [tile: string, type: string]
   hu: []
   discard: [tile: string]
 }>()
 
 const showKongPicker = ref(false)
+const showChiPicker = ref(false)
 
 // 是否显示操作栏
 const showBar = computed(() => props.availableActions.length > 0)
 
 // 各操作的可用状态
 const canPass = computed(() => props.availableActions.includes('PASS'))
+const canChi = computed(() => props.availableActions.includes('CHI'))
 const canPong = computed(() => props.availableActions.includes('PONG'))
 const canKong = computed(() =>
   props.availableActions.includes('MING_KONG') ||
@@ -170,6 +193,31 @@ function handleDiscard() {
   if (props.selectedTile) {
     emit('discard', props.selectedTile)
   }
+}
+
+// 吃牌选项（用于弹窗显示）
+const chiPickerOptions = computed(() => {
+  return props.chiOptions.map(tiles => ({
+    name: `吃 ${tiles.join(' + ')}`,
+    value: tiles
+  }))
+})
+
+// 处理吃牌
+function handleChi() {
+  if (props.chiOptions.length === 1) {
+    // 只有一种吃法，直接执行
+    emit('chi', props.chiOptions[0])
+  } else if (props.chiOptions.length > 1) {
+    // 多种吃法，弹出选择
+    showChiPicker.value = true
+  }
+}
+
+// 吃牌选择
+function onChiSelect(action: { value: string[] }) {
+  emit('chi', action.value)
+  showChiPicker.value = false
 }
 </script>
 
