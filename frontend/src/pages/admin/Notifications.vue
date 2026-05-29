@@ -214,7 +214,7 @@ const getSendStatusText = (status: number): string => {
   return texts[status] || '未知'
 }
 
-const formatDate = (date: string): string => {
+const formatDate = (date?: string): string => {
   if (!date) return '-'
   return new Date(date).toLocaleString('zh-CN')
 }

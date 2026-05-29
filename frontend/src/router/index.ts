@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router'
 import { useUserStore } from '@/store/modules/user'
+import { authAPI } from '@/services/api'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -15,7 +16,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'Home',
-    component: () => import('@/pages/mobile/Home.vue'),
+    redirect: '/mobile/home',
     meta: { requiresAuth: true },
   },
   {
@@ -23,7 +24,28 @@ const routes: RouteRecordRaw[] = [
     name: 'MobileLayout',
     component: () => import('@/layouts/MobileLayout.vue'),
     meta: { requiresAuth: true },
+    redirect: '/mobile/home',
     children: [
+      {
+        path: 'home',
+        name: 'MobileHome',
+        component: () => import('@/pages/mobile/Home.vue'),
+      },
+      {
+        path: 'daily',
+        name: 'MobileDaily',
+        component: () => import('@/pages/mobile/Daily.vue'),
+      },
+      {
+        path: 'events',
+        name: 'MobileEvents',
+        component: () => import('@/pages/mobile/Events.vue'),
+      },
+      {
+        path: 'templates',
+        name: 'MobileTemplates',
+        component: () => import('@/pages/mobile/Templates.vue'),
+      },
       {
         path: 'applications',
         name: 'MobileApplications',
@@ -102,18 +124,35 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach((to, _from, next) => {
+let authChecked = false
+
+router.beforeEach(async (to, _from, next) => {
   const userStore = useUserStore()
 
   if (to.meta.requiresAuth) {
     if (!userStore.token) {
-      next('/login')
-    } else {
-      next()
+      authChecked = false
+      next({ path: '/login', query: { redirect: to.fullPath } })
+      return
     }
-  } else {
+
+    if (!authChecked) {
+      try {
+        await authAPI.getUserInfo()
+        authChecked = true
+      } catch {
+        authChecked = false
+        userStore.clearUserInfo()
+        next({ path: '/login', query: { redirect: to.fullPath } })
+        return
+      }
+    }
+
     next()
+    return
   }
+
+  next()
 })
 
 export default router

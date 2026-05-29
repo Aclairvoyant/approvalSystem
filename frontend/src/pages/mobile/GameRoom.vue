@@ -68,7 +68,7 @@
             :src="gameStore.currentGame?.player1Avatar || defaultAvatar"
           />
           <span class="name">{{ gameStore.currentGame?.player1Name || '玩家1' }}</span>
-          <van-tag v-if="gameStore.currentGame?.currentTurn === 1" type="primary" size="small">
+          <van-tag v-if="gameStore.currentGame?.currentTurn === 1" type="primary" size="medium">
             当前回合
           </van-tag>
         </div>
@@ -81,7 +81,7 @@
             :src="gameStore.currentGame?.player2Avatar || defaultAvatar"
           />
           <span class="name">{{ gameStore.currentGame?.player2Name || '玩家2' }}</span>
-          <van-tag v-if="gameStore.currentGame?.currentTurn === 2" type="primary" size="small">
+          <van-tag v-if="gameStore.currentGame?.currentTurn === 2" type="primary" size="medium">
             当前回合
           </van-tag>
         </div>

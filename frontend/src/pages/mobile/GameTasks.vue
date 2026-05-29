@@ -241,7 +241,7 @@ const newTask = reactive({
   category: 'romantic',
   difficulty: 1,
   points: 10,
-  timeLimit: null as number | null
+  timeLimit: undefined as number | undefined
 })
 
 // 方法
@@ -343,7 +343,7 @@ async function onRefreshCustom() {
 
 // 创建任务
 async function handleCreateTask() {
-  const toast = showLoadingToast({ message: '创建中...', forbidClick: true })
+  showLoadingToast({ message: '创建中...', forbidClick: true })
 
   try {
     await gameTaskApi.createCustomTask({
@@ -366,7 +366,7 @@ async function handleCreateTask() {
     newTask.category = 'romantic'
     newTask.difficulty = 1
     newTask.points = 10
-    newTask.timeLimit = null
+    newTask.timeLimit = undefined
 
     showCreateDialog.value = false
 

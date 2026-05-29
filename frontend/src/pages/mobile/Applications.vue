@@ -7,7 +7,7 @@
       @click-left="$router.back()"
     >
       <template #right>
-        <van-icon name="add-o" size="20" @click="showCreateSheet = true" />
+        <van-icon name="add-o" size="20" @click="openCreateSheet" />
       </template>
     </van-nav-bar>
 
@@ -32,7 +32,7 @@
       >
         <div v-if="visibleApplications.length === 0 && !loading" class="empty-state">
           <van-empty description="暂无申请记录">
-            <van-button type="primary" round size="small" @click="showCreateSheet = true">
+            <van-button type="primary" round size="small" @click="openCreateSheet">
               创建申请
             </van-button>
           </van-empty>
@@ -98,6 +98,17 @@
       <div class="create-form">
         <van-form @submit="submitApplication">
           <van-cell-group inset>
+            <van-cell
+              title="申请模板"
+              :value="selectedTemplateName || '选择常用模板'"
+              is-link
+              clickable
+              @click="openTemplatePicker"
+            >
+              <template #icon>
+                <van-icon name="records-o" class="template-cell-icon" />
+              </template>
+            </van-cell>
             <van-field
               v-model="newApplication.title"
               label="事项标题"
@@ -179,6 +190,43 @@
       />
     </van-popup>
 
+    <!-- 申请模板选择器 -->
+    <van-popup v-model:show="showTemplatePicker" position="bottom" round>
+      <div class="template-picker">
+        <div class="template-picker-header">
+          <div>
+            <div class="template-picker-title">选择模板</div>
+            <div class="template-picker-subtitle">套用后只填充标题、描述和备注</div>
+          </div>
+          <van-button size="small" type="primary" plain @click="goTemplateManage">管理模板</van-button>
+        </div>
+
+        <van-loading v-if="templatesLoading" class="template-loading" size="24px">
+          加载中...
+        </van-loading>
+
+        <van-empty v-else-if="templates.length === 0" description="还没有申请模板">
+          <van-button type="primary" size="small" round @click="goTemplateManage">去创建模板</van-button>
+        </van-empty>
+
+        <van-cell-group v-else inset>
+          <van-cell
+            v-for="template in templates"
+            :key="template.id"
+            clickable
+            is-link
+            :title="template.title"
+            :label="template.description"
+            @click="applyTemplate(template)"
+          >
+            <template #value>
+              <span class="template-usage">用过 {{ template.usageCount || 0 }} 次</span>
+            </template>
+          </van-cell>
+        </van-cell-group>
+      </div>
+    </van-popup>
+
     <!-- 修改申请弹窗 -->
     <van-action-sheet
       v-model:show="showEditSheet"
@@ -221,7 +269,7 @@
     </van-action-sheet>
 
     <!-- 浮动按钮 -->
-    <div class="fab-button" @click="showCreateSheet = true">
+    <div class="fab-button" @click="openCreateSheet">
       <van-icon name="plus" size="24" />
     </div>
   </div>
@@ -229,12 +277,20 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { showToast, showSuccessToast, showLoadingToast, closeToast, showConfirmDialog } from 'vant'
-import { applicationAPI, relationAPI, attachmentAPI, type Application } from '@/services/api'
+import {
+  applicationAPI,
+  relationAPI,
+  attachmentAPI,
+  applicationTemplateAPI,
+  type Application,
+  type ApplicationTemplate,
+} from '@/services/api'
 import { useUserStore } from '@/store/modules/user'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 
 // 列表数据
@@ -269,7 +325,11 @@ const visibleApplications = computed(() => {
 const showCreateSheet = ref(false)
 const submitting = ref(false)
 const showApproverPicker = ref(false)
+const showTemplatePicker = ref(false)
+const templatesLoading = ref(false)
 const relations = ref<any[]>([])
+const templates = ref<ApplicationTemplate[]>([])
+const selectedTemplateName = ref('')
 const selectedApproverName = ref('')
 const uploadFileList = ref<any[]>([])
 
@@ -299,8 +359,48 @@ const approverColumns = computed(() => {
   }))
 })
 
+const openCreateSheet = (): void => {
+  showCreateSheet.value = true
+}
+
+const openTemplatePicker = async (): Promise<void> => {
+  showTemplatePicker.value = true
+  await loadTemplates()
+}
+
+const loadTemplates = async (): Promise<void> => {
+  templatesLoading.value = true
+  try {
+    templates.value = await applicationTemplateAPI.list()
+  } catch (error: any) {
+    showToast(error.message || '模板加载失败')
+  } finally {
+    templatesLoading.value = false
+  }
+}
+
+const applyTemplate = async (template: ApplicationTemplate): Promise<void> => {
+  try {
+    const used = await applicationTemplateAPI.use(template.id)
+    newApplication.value.title = used.title || ''
+    newApplication.value.description = used.description || ''
+    newApplication.value.remark = used.remark || ''
+    selectedTemplateName.value = used.title || template.title
+    showTemplatePicker.value = false
+    showSuccessToast('已套用模板')
+  } catch (error: any) {
+    showToast(error.message || '模板套用失败')
+  }
+}
+
+const goTemplateManage = (): void => {
+  showTemplatePicker.value = false
+  showCreateSheet.value = false
+  router.push('/mobile/templates')
+}
+
 // 获取状态类型
-const getStatusType = (status: number): string => {
+const getStatusType = (status: number): any => {
   const types: Record<number, string> = {
     1: 'warning',
     2: 'success',
@@ -450,6 +550,7 @@ const submitApplication = async (): Promise<void> => {
     // 重置表单
     showCreateSheet.value = false
     newApplication.value = { approverId: 0, title: '', description: '', remark: '', sendVoiceNotification: false }
+    selectedTemplateName.value = ''
     selectedApproverName.value = ''
     uploadFileList.value = []
 
@@ -537,9 +638,30 @@ const handleDelete = async (app: Application): Promise<void> => {
   }
 }
 
+const applyRoutePrefill = (): void => {
+  const title = typeof route.query.title === 'string' ? route.query.title : ''
+  const description = typeof route.query.description === 'string' ? route.query.description : ''
+  const remark = typeof route.query.remark === 'string' ? route.query.remark : ''
+  const approverId = typeof route.query.approverId === 'string' ? Number(route.query.approverId) : 0
+  const approverName = typeof route.query.approverName === 'string' ? route.query.approverName : ''
+
+  if (title || description || remark || approverId) {
+    newApplication.value.title = title
+    newApplication.value.description = description
+    newApplication.value.remark = remark
+    selectedTemplateName.value = title ? '从模板带入' : ''
+    if (approverId) {
+      newApplication.value.approverId = approverId
+      selectedApproverName.value = approverName
+    }
+    showCreateSheet.value = true
+  }
+}
+
 onMounted(() => {
   loadRelations()
   loadHiddenApplications()
+  applyRoutePrefill()
 })
 </script>
 
@@ -653,6 +775,49 @@ onMounted(() => {
   padding: 16px;
   max-height: 70vh;
   overflow-y: auto;
+}
+
+.template-cell-icon {
+  margin-right: 8px;
+  color: #667eea;
+  line-height: 24px;
+}
+
+.template-picker {
+  max-height: 72vh;
+  padding: 16px 0 20px;
+  overflow-y: auto;
+}
+
+.template-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px 12px;
+}
+
+.template-picker-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.template-picker-subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #999;
+}
+
+.template-loading {
+  display: flex;
+  justify-content: center;
+  padding: 28px 0;
+}
+
+.template-usage {
+  color: #999;
+  font-size: 12px;
 }
 
 .form-actions {

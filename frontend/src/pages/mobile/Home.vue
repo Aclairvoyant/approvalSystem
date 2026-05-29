@@ -1,394 +1,260 @@
 <template>
-  <div class="home-container">
-    <!-- 背景装饰 -->
-    <div class="bg-decoration">
-      <div class="circle circle-1"></div>
-      <div class="circle circle-2"></div>
-      <div class="circle circle-3"></div>
-    </div>
-
-    <!-- 头部区域 -->
-    <div class="header">
-      <div class="logo-wrapper">
-        <div class="logo">
-          <div class="logo-icon">📋</div>
-        </div>
+  <div class="home-page">
+    <header class="top-bar">
+      <div>
+        <div class="hello">欢迎回来</div>
+        <h1>{{ userStore.realName || userStore.username }}</h1>
       </div>
-      <h1 class="title">审批管理系统</h1>
-      <p class="subtitle">
-        <span class="wave">👋</span>
-        欢迎回来，{{ userStore.realName || userStore.username }}
-      </p>
-    </div>
+      <router-link class="partner-link" to="/mobile/relations">对象</router-link>
+    </header>
 
-    <!-- 快捷入口 -->
-    <div class="quick-links">
-      <router-link
-        to="/mobile/applications"
-        class="quick-link"
-        :style="{ animationDelay: '0.1s' }"
-      >
-        <div class="link-bg"></div>
-        <div class="link-icon">📝</div>
-        <div class="link-text">创建申请</div>
-        <div class="link-arrow">→</div>
+    <section class="summary-grid">
+      <router-link to="/mobile/approvals" class="summary-item">
+        <span class="summary-value">{{ summary.pendingApprovalCount }}</span>
+        <span class="summary-label">待审批</span>
       </router-link>
-
-      <router-link
-        to="/mobile/approvals"
-        class="quick-link"
-        :style="{ animationDelay: '0.2s' }"
-      >
-        <div class="link-bg"></div>
-        <div class="link-icon">✅</div>
-        <div class="link-text">待审批</div>
-        <div class="link-arrow">→</div>
+      <router-link to="/mobile/daily" class="summary-item">
+        <span class="summary-value">{{ summary.todayDailyCount }}</span>
+        <span class="summary-label">今日事项</span>
       </router-link>
-
-      <router-link
-        to="/mobile/relations"
-        class="quick-link"
-        :style="{ animationDelay: '0.3s' }"
-      >
-        <div class="link-bg"></div>
-        <div class="link-icon">👥</div>
-        <div class="link-text">管理对象</div>
-        <div class="link-arrow">→</div>
+      <router-link to="/mobile/daily" class="summary-item">
+        <span class="summary-value">{{ summary.overdueDailyCount }}</span>
+        <span class="summary-label">已逾期</span>
       </router-link>
-
-      <router-link
-        to="/mobile/profile"
-        class="quick-link"
-        :style="{ animationDelay: '0.4s' }"
-      >
-        <div class="link-bg"></div>
-        <div class="link-icon">⚙️</div>
-        <div class="link-text">个人设置</div>
-        <div class="link-arrow">→</div>
+      <router-link to="/mobile/events" class="summary-item">
+        <span class="summary-value">{{ eventCount }}</span>
+        <span class="summary-label">纪念日</span>
       </router-link>
-    </div>
+    </section>
 
-    <!-- 底部装饰 -->
-    <div class="footer-decoration">
-      <div class="wave-line"></div>
-    </div>
+    <section class="quick-actions">
+      <router-link to="/mobile/daily" class="action">
+        <van-icon name="notes-o" />
+        <span>记一件事</span>
+      </router-link>
+      <router-link to="/mobile/applications" class="action">
+        <van-icon name="records-o" />
+        <span>发起申请</span>
+      </router-link>
+      <router-link to="/mobile/templates" class="action">
+        <van-icon name="orders-o" />
+        <span>申请模板</span>
+      </router-link>
+      <router-link to="/mobile/events" class="action">
+        <van-icon name="underway-o" />
+        <span>纪念日</span>
+      </router-link>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>今天要做</h2>
+        <router-link to="/mobile/daily">全部</router-link>
+      </div>
+      <van-empty v-if="!loading && summary.todayDailyItems.length === 0" description="今天没有待办" />
+      <van-cell
+        v-for="item in summary.todayDailyItems"
+        :key="item.id"
+        :title="item.title"
+        :label="item.content || typeText(item.itemType)"
+        is-link
+        to="/mobile/daily"
+      />
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>近期纪念日</h2>
+        <router-link to="/mobile/events">管理</router-link>
+      </div>
+      <van-empty
+        v-if="!loading && summary.upcomingEvents.length === 0"
+        :description="eventCount > 0 ? '30天内没有纪念日' : '还没有纪念日'"
+      />
+      <van-cell
+        v-for="event in summary.upcomingEvents"
+        :key="event.id"
+        :title="event.title"
+        :label="event.eventDate"
+        is-link
+        to="/mobile/events"
+      >
+        <template #value>{{ daysText(event.eventDate, event.repeatType) }}</template>
+      </van-cell>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed, onMounted, reactive, ref } from 'vue'
+import { showFailToast } from 'vant'
+import { reminderAPI, type ReminderSummary } from '@/services/api'
 import { useUserStore } from '@/store/modules/user'
 
 const userStore = useUserStore()
+const loading = ref(false)
+const summary = reactive<ReminderSummary>({
+  pendingApprovalCount: 0,
+  todayDailyCount: 0,
+  overdueDailyCount: 0,
+  upcomingEventCount: 0,
+  pendingApprovals: [],
+  todayDailyItems: [],
+  overdueDailyItems: [],
+  upcomingEvents: [],
+})
+
+const eventCount = computed(() => summary.totalEventCount ?? summary.upcomingEventCount)
+
+onMounted(() => {
+  loadSummary()
+})
+
+async function loadSummary() {
+  loading.value = true
+  try {
+    Object.assign(summary, await reminderAPI.today())
+  } catch (error: any) {
+    showFailToast(error.message || '加载失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+function typeText(type: number) {
+  return ({ 1: '待办', 2: '清单', 3: '约会', 4: '约定' } as Record<number, string>)[type] || '事项'
+}
+
+function daysText(date: string, repeatType: number) {
+  const today = new Date()
+  const base = new Date(date)
+  let next = base
+  if (repeatType === 1) {
+    next = new Date(today.getFullYear(), base.getMonth(), base.getDate())
+    if (next < new Date(today.getFullYear(), today.getMonth(), today.getDate())) {
+      next.setFullYear(next.getFullYear() + 1)
+    }
+  }
+  const diff = Math.ceil((next.getTime() - today.getTime()) / 86400000)
+  return diff <= 0 ? '今天' : `${diff}天`
+}
 </script>
 
 <style scoped>
-.home-container {
+.home-page {
   min-height: 100vh;
-  padding: 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  position: relative;
-  overflow: hidden;
+  padding: 18px 14px 76px;
+  background: #f6f7f9;
 }
 
-/* 背景装饰 */
-.bg-decoration {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  z-index: 0;
-}
-
-.circle {
-  position: absolute;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  animation: float 20s infinite ease-in-out;
-}
-
-.circle-1 {
-  width: 300px;
-  height: 300px;
-  top: -150px;
-  right: -150px;
-  animation-delay: 0s;
-}
-
-.circle-2 {
-  width: 200px;
-  height: 200px;
-  bottom: -100px;
-  left: -100px;
-  animation-delay: 5s;
-}
-
-.circle-3 {
-  width: 150px;
-  height: 150px;
-  top: 50%;
-  left: 50%;
-  animation-delay: 10s;
-}
-
-@keyframes float {
-  0%, 100% {
-    transform: translate(0, 0) scale(1);
-    opacity: 0.3;
-  }
-  50% {
-    transform: translate(20px, -20px) scale(1.1);
-    opacity: 0.5;
-  }
-}
-
-/* 头部区域 */
-.header {
-  text-align: center;
-  margin-bottom: 40px;
-  position: relative;
-  z-index: 1;
-  animation: slideDown 0.6s ease-out;
-}
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-30px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.logo-wrapper {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 20px;
-}
-
-.logo {
-  width: 80px;
-  height: 80px;
-  background: white;
-  border-radius: 24px;
+.top-bar {
   display: flex;
   align-items: center;
-  justify-content: center;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-  animation: pulse 2s infinite ease-in-out;
+  justify-content: space-between;
+  margin-bottom: 16px;
 }
 
-@keyframes pulse {
-  0%, 100% {
-    transform: scale(1);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-  }
-  50% {
-    transform: scale(1.05);
-    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
-  }
+.partner-link {
+  padding: 6px 13px;
+  border: 1px solid #d9dce3;
+  border-radius: 999px;
+  color: #4f46e5;
+  font-size: 13px;
+  text-decoration: none;
+  background: #fff;
 }
 
-.logo-icon {
-  font-size: 48px;
-  animation: rotate 3s infinite ease-in-out;
+.hello {
+  color: #7b8190;
+  font-size: 13px;
 }
 
-@keyframes rotate {
-  0%, 100% {
-    transform: rotate(0deg);
-  }
-  50% {
-    transform: rotate(10deg);
-  }
+h1 {
+  margin: 3px 0 0;
+  color: #1f2329;
+  font-size: 24px;
+  line-height: 1.2;
 }
 
-.title {
-  margin: 0 0 12px 0;
-  color: white;
-  font-size: 32px;
-  font-weight: 700;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-  letter-spacing: 1px;
-}
-
-.subtitle {
-  margin: 0;
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 16px;
-  font-weight: 400;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.wave {
-  display: inline-block;
-  animation: wave 2s infinite ease-in-out;
-  transform-origin: 70% 70%;
-}
-
-@keyframes wave {
-  0%, 100% {
-    transform: rotate(0deg);
-  }
-  25% {
-    transform: rotate(20deg);
-  }
-  75% {
-    transform: rotate(-20deg);
-  }
-}
-
-/* 快捷入口 */
-.quick-links {
+.summary-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-  position: relative;
-  z-index: 1;
-  padding-bottom: 60px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
 }
 
-.quick-link {
-  position: relative;
+.summary-item,
+.action {
+  text-decoration: none;
+  background: #fff;
+  border-radius: 8px;
+  color: #1f2329;
+}
+
+.summary-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 32px 20px;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  border-radius: 20px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-  text-decoration: none;
-  color: #333;
-  overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  animation: slideUp 0.6s ease-out backwards;
+  padding: 12px 4px;
 }
 
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(30px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.link-bg {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-.quick-link:active {
-  transform: scale(0.95);
-}
-
-.quick-link:active .link-bg {
-  opacity: 0.1;
-}
-
-.link-icon {
-  font-size: 48px;
-  margin-bottom: 12px;
-  transition: transform 0.3s ease;
-  position: relative;
-  z-index: 1;
-}
-
-.quick-link:active .link-icon {
-  transform: scale(1.2) rotate(10deg);
-}
-
-.link-text {
-  font-size: 16px;
-  font-weight: 600;
-  color: #333;
-  position: relative;
-  z-index: 1;
-  transition: color 0.3s ease;
-}
-
-.link-arrow {
-  position: absolute;
-  bottom: 12px;
-  right: 12px;
+.summary-value {
+  color: #4f46e5;
   font-size: 20px;
-  color: #667eea;
-  opacity: 0;
-  transform: translateX(-10px);
-  transition: all 0.3s ease;
+  font-weight: 700;
 }
 
-.quick-link:active .link-arrow {
-  opacity: 1;
-  transform: translateX(0);
+.summary-label {
+  margin-top: 4px;
+  color: #7b8190;
+  font-size: 11px;
 }
 
-/* 底部装饰 */
-.footer-decoration {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  height: 60px;
-  z-index: 0;
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
 }
 
-.wave-line {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 200%;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 50% 50% 0 0;
-  animation: waveMove 10s infinite linear;
+.action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 4px;
+  color: #3b3f4a;
+  font-size: 12px;
 }
 
-@keyframes waveMove {
-  0% {
-    transform: translateX(0);
-  }
-  100% {
-    transform: translateX(-50%);
-  }
+.action .van-icon {
+  color: #4f46e5;
+  font-size: 22px;
 }
 
-/* 响应式调整 */
-@media (max-width: 360px) {
-  .quick-links {
-    gap: 12px;
-  }
+.panel {
+  overflow: hidden;
+  margin-bottom: 12px;
+  background: #fff;
+  border-radius: 8px;
+}
 
-  .quick-link {
-    padding: 24px 16px;
-  }
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px 4px;
+}
 
-  .link-icon {
-    font-size: 40px;
-  }
+.panel-header h2 {
+  margin: 0;
+  color: #1f2329;
+  font-size: 16px;
+}
 
-  .link-text {
-    font-size: 14px;
-  }
-
-  .title {
-    font-size: 28px;
-  }
+.panel-header a {
+  color: #4f46e5;
+  font-size: 13px;
+  text-decoration: none;
 }
 </style>

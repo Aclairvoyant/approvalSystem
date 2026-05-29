@@ -34,7 +34,7 @@
       <template #voiceNotification="{ record }">
         <a-switch
           :model-value="record.voiceNotificationEnabled"
-          @change="(value) => toggleVoiceNotification(record, value)"
+          @change="(value) => toggleVoiceNotification(record, Boolean(value))"
           :before-change="() => confirmVoiceNotificationChange(record)"
         />
       </template>

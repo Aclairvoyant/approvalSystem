@@ -1,10 +1,14 @@
 package com.approval.system.common.config;
 
+import com.approval.system.common.response.ApiResponse;
 import com.approval.system.common.security.JwtAuthenticationFilter;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -16,6 +20,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
 
@@ -23,8 +28,16 @@ import java.util.Collections;
 @EnableWebSecurity
 public class SecurityConfig {
 
+    private static final String AUTH_EXPIRED_MESSAGE =
+            "\u767b\u5f55\u72b6\u6001\u5df2\u5931\u6548\uff0c\u8bf7\u91cd\u65b0\u767b\u5f55";
+    private static final String FORBIDDEN_MESSAGE =
+            "\u6ca1\u6709\u6743\u9650\u8bbf\u95ee\u8be5\u8d44\u6e90";
+
     @Autowired
     private JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -34,44 +47,45 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // ✅ 1. 禁用 CSRF
                 .csrf(csrf -> csrf.disable())
-                // ✅ 2. 配置 CORS
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                // ✅ 3. 会话管理 - 无状态
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                // ✅ 4. 授权配置 - 重要！
+                .exceptionHandling(exception -> exception
+                        .authenticationEntryPoint((request, response, authException) ->
+                                writeJsonError(response, HttpServletResponse.SC_UNAUTHORIZED,
+                                        ApiResponse.fail(401, AUTH_EXPIRED_MESSAGE)))
+                        .accessDeniedHandler((request, response, accessDeniedException) ->
+                                writeJsonError(response, HttpServletResponse.SC_FORBIDDEN,
+                                        ApiResponse.fail(403, FORBIDDEN_MESSAGE)))
+                )
                 .authorizeHttpRequests(authz -> authz
-                        // ✅ 允许 OPTIONS 预检请求
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        // ✅ 允许公开路由 - 只允许登录和注册
                         .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/send-email-code").permitAll()
                         .requestMatchers("/api/health").permitAll()
-                        // ✅ 允许 WebSocket 端点
                         .requestMatchers("/ws/**").permitAll()
-                        // ✅ 允许 OpenAPI/Swagger 文档
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/v3/api-docs.yaml").permitAll()
                         .requestMatchers("/swagger-resources/**", "/webjars/**").permitAll()
-                        // ✅ 允许静态资源（头像上传）
                         .requestMatchers("/uploads/**").permitAll()
-                        // ✅ 其他请求需要认证
                         .anyRequest().authenticated()
                 )
-                // ✅ 5. JWT 过滤器 - 放在 UsernamePasswordAuthenticationFilter 之前
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    private void writeJsonError(HttpServletResponse response, int status, ApiResponse<Void> body) throws IOException {
+        response.setStatus(status);
+        response.setCharacterEncoding("UTF-8");
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        objectMapper.writeValue(response.getWriter(), body);
     }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // ✅ 使用 allowedOriginPatterns 代替 allowedOrigins，支持凭证
         configuration.setAllowedOriginPatterns(Collections.singletonList("*"));
-
-        // ✅ 允许所有 HTTP 方法
         configuration.setAllowedMethods(Arrays.asList(
                 HttpMethod.GET.name(),
                 HttpMethod.POST.name(),
@@ -81,22 +95,13 @@ public class SecurityConfig {
                 HttpMethod.PATCH.name(),
                 HttpMethod.HEAD.name()
         ));
-
-        // ✅ 允许所有请求头
         configuration.setAllowedHeaders(Collections.singletonList("*"));
-
-        // ✅ 允许暴露的响应头
         configuration.setExposedHeaders(Arrays.asList(
                 "Authorization",
                 "Content-Type",
                 "Accept"
         ));
-
-        // ✅ 允许凭证（WebSocket/SockJS需要此设置）
-        // 注意：使用 allowedOriginPatterns 而非 allowedOrigins 时可以设置为 true
         configuration.setAllowCredentials(true);
-
-        // ✅ 预检请求缓存时间（1小时）
         configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -104,4 +109,3 @@ public class SecurityConfig {
         return source;
     }
 }
-

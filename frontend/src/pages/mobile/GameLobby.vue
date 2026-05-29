@@ -235,7 +235,7 @@ async function loadMore() {
   loading.value = true
   try {
     const status = activeTab.value === 0 ? undefined : activeTab.value
-    const response = await gameStore.fetchGameHistory(status)
+    await gameStore.fetchGameHistory(status)
     const newGames = gameStore.gameHistory
 
     if (pageNum.value === 1) {
@@ -292,7 +292,7 @@ async function handleCreateGame(action: string): Promise<boolean> {
       return false
     }
 
-    const toast = showLoadingToast({ message: '创建中...', forbidClick: true })
+    showLoadingToast({ message: '创建中...', forbidClick: true })
     try {
       const game = await gameStore.createGame(selectedPartnerId.value)
       closeToast()
@@ -321,7 +321,7 @@ async function handleJoinGame(action: string): Promise<boolean> {
       return false
     }
 
-    const toast = showLoadingToast({ message: '加入中...', forbidClick: true })
+    showLoadingToast({ message: '加入中...', forbidClick: true })
     try {
       const game = await gameStore.joinGame(joinGameCode.value)
       closeToast()

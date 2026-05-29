@@ -75,12 +75,13 @@
 
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { showSuccessToast, showFailToast } from 'vant'
 import { useUserStore } from '@/store/modules/user'
 import { authAPI } from '@/services/api'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 const loading = ref(false)
 
@@ -99,7 +100,10 @@ const handleLogin = async (): Promise<void> => {
 
     userStore.setUserInfo(response)
     showSuccessToast('登录成功')
-    router.push('/mobile/applications')
+    const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
+      ? route.query.redirect
+      : '/mobile/home'
+    router.replace(redirect)
   } catch (error: any) {
     showFailToast(error.message || '登录失败')
   } finally {

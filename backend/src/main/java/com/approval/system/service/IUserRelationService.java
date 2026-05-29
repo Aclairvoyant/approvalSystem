@@ -36,6 +36,8 @@ public interface IUserRelationService extends IService<UserRelation> {
      */
     boolean isRelated(Long userId1, Long userId2);
 
+    Long getActivePartnerId(Long userId);
+
     /**
      * 删除对象关系
      */

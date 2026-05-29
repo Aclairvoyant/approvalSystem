@@ -470,7 +470,7 @@ const handleUpdateField = async (): Promise<void> => {
     const updateData: Record<string, string> = {}
     updateData[editField.value] = editValue.value
 
-    const response = await authAPI.updateProfile(updateData)
+    await authAPI.updateProfile(updateData)
 
     // 更新本地存储
     if (editField.value === 'realName') {
@@ -599,7 +599,7 @@ const handleChangeEmail = async (): Promise<void> => {
 
   try {
     showLoadingToast({ message: '修改中...', forbidClick: true })
-    const updatedUser = await authAPI.changeEmail(password, newEmail, verificationCode)
+    await authAPI.changeEmail(password, newEmail, verificationCode)
 
     // 更新本地存储
     userStore.email = newEmail
@@ -706,7 +706,7 @@ const openApprovalHistory = async (): Promise<void> => {
 }
 
 // 获取状态类型
-const getStatusType = (status: number): string => {
+const getStatusType = (status: number): any => {
   const types: Record<number, string> = {
     1: 'warning',
     2: 'success',

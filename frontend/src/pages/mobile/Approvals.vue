@@ -167,7 +167,7 @@ interface Application {
   applicantId: number
   applicantName?: string
   applicantUsername?: string
-  status: string
+  status: number
   createdAt: string
 }
 

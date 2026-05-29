@@ -577,7 +577,7 @@ const handleSendVoiceNotification = async (): Promise<void> => {
   }
 }
 
-const getStatusType = (status?: number): string => {
+const getStatusType = (status?: number): any => {
   const types: Record<number, string> = {
     1: 'warning',
     2: 'success',

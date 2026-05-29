@@ -3,28 +3,29 @@
     <div class="mobile-content">
       <router-view />
     </div>
-    <div class="mobile-nav">
-      <router-link to="/mobile/applications" class="nav-item" :class="{ active: isActive('applications') }">
-        <div class="nav-icon">📝</div>
-        <div class="nav-label">我的申请</div>
+
+    <nav class="mobile-nav">
+      <router-link to="/mobile/home" class="nav-item" :class="{ active: isActive('home') }">
+        <van-icon name="wap-home-o" class="nav-icon" />
+        <div class="nav-label">首页</div>
       </router-link>
-      <router-link to="/mobile/approvals" class="nav-item" :class="{ active: isActive('approvals') }">
-        <div class="nav-icon">✅</div>
-        <div class="nav-label">待审批</div>
+      <router-link to="/mobile/daily" class="nav-item" :class="{ active: isActive('daily') }">
+        <van-icon name="notes-o" class="nav-icon" />
+        <div class="nav-label">日常</div>
       </router-link>
-      <router-link to="/mobile/relations" class="nav-item" :class="{ active: isActive('relations') }">
-        <div class="nav-icon">👥</div>
-        <div class="nav-label">我的对象</div>
+      <router-link to="/mobile/applications" class="nav-item" :class="{ active: isActive('applications') || isActive('approvals') }">
+        <van-icon name="records-o" class="nav-icon" />
+        <div class="nav-label">申请</div>
       </router-link>
       <router-link to="/mobile/game" class="nav-item" :class="{ active: isActive('game') }">
-        <div class="nav-icon">🎮</div>
+        <van-icon name="flag-o" class="nav-icon" />
         <div class="nav-label">游戏</div>
       </router-link>
       <router-link to="/mobile/profile" class="nav-item" :class="{ active: isActive('profile') }">
-        <div class="nav-icon">👤</div>
-        <div class="nav-label">个人中心</div>
+        <van-icon name="user-o" class="nav-icon" />
+        <div class="nav-label">我的</div>
       </router-link>
-    </div>
+    </nav>
   </div>
 </template>
 
@@ -33,9 +34,7 @@ import { useRoute } from 'vue-router'
 
 const route = useRoute()
 
-const isActive = (name: string): boolean => {
-  return route.path.includes(name)
-}
+const isActive = (name: string): boolean => route.path.includes(name)
 </script>
 
 <style scoped>
@@ -44,6 +43,7 @@ const isActive = (name: string): boolean => {
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
+  background: #f6f7f9;
 }
 
 .mobile-content {
@@ -58,13 +58,13 @@ const isActive = (name: string): boolean => {
   bottom: 0;
   left: 0;
   right: 0;
-  display: flex;
-  justify-content: space-around;
-  align-items: center;
+  z-index: 1000;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
   height: 60px;
-  background: white;
-  border-top: 1px solid #f0f0f0;
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+  background: #fff;
+  border-top: 1px solid #eceff3;
+  box-shadow: 0 -2px 10px rgba(31, 35, 41, 0.06);
 }
 
 .nav-item {
@@ -72,23 +72,22 @@ const isActive = (name: string): boolean => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  flex: 1;
-  height: 100%;
+  min-width: 0;
   text-decoration: none;
-  color: #999;
-  transition: all 0.3s;
+  color: #8a8f99;
 }
 
 .nav-item.active {
-  color: #667eea;
+  color: #4f46e5;
 }
 
 .nav-icon {
-  font-size: 24px;
-  margin-bottom: 4px;
+  font-size: 22px;
+  margin-bottom: 3px;
 }
 
 .nav-label {
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1;
 }
 </style>

@@ -1,22 +1,141 @@
 import http from './http'
-import type { components } from './api.d'
 
 // 从生成的类型中导出常用类型
-export type User = components['schemas']['User']
-export type Application = components['schemas']['Application']
-export type UserRelation = components['schemas']['UserRelation']
-export type LoginRequest = components['schemas']['LoginRequest']
-export type RegisterRequest = components['schemas']['RegisterRequest']
-export type LoginResponse = components['schemas']['LoginResponse']
-export type ApplicationCreateRequest = components['schemas']['ApplicationCreateRequest']
-export type ApplicationApprovalRequest = components['schemas']['ApplicationApprovalRequest']
-export type FileUploadResponse = components['schemas']['FileUploadResponse']
-export type OperationLogDTO = components['schemas']['OperationLogDTO']
-export type PageApplication = components['schemas']['PageApplication']
-export type PageUserRelation = components['schemas']['PageUserRelation']
+export interface User {
+  id: number
+  username: string
+  phone?: string
+  email?: string
+  password?: string
+  realName?: string
+  avatar?: string
+  role: number
+  voiceNotificationEnabled?: boolean
+  status: number
+  createdAt?: string
+  updatedAt?: string
+  admin?: boolean
+}
+
+export interface Application {
+  id: number
+  applicantId: number
+  approverId: number
+  title: string
+  description: string
+  remark?: string
+  status: number
+  rejectReason?: string
+  approvalDetail?: string
+  applicantName?: string
+  applicantUsername?: string
+  approverName?: string
+  approverUsername?: string
+  createdAt: string
+  approvedAt?: string
+  updatedAt?: string
+}
+
+export interface UserRelation {
+  id: number
+  userId: number
+  relatedUserId: number
+  relationType?: number
+  requesterId: number
+  otherUserId: number
+  otherUserName?: string
+  otherUserUsername?: string
+  otherUserPhone?: string
+  otherUserEmail?: string
+  otherUserAvatar?: string
+  requesterName?: string
+  requesterUsername?: string
+  requesterAvatar?: string
+  createdAt: string
+  updatedAt?: string
+}
+
+export interface LoginRequest {
+  username?: string
+  password?: string
+}
+
+export interface RegisterRequest {
+  username?: string
+  phone?: string
+  password?: string
+  email?: string
+  realName?: string
+  emailVerificationCode?: string
+}
+
+export interface LoginResponse {
+  token?: string
+  userId?: number
+  username?: string
+  realName?: string
+  phone?: string
+  email?: string
+  avatar?: string
+  role?: number
+  voiceNotificationEnabled?: boolean
+}
+
+export interface ApplicationCreateRequest {
+  approverId: number
+  title: string
+  description: string
+  remark?: string
+  sendVoiceNotification?: boolean
+}
+
+export interface ApplicationApprovalRequest {
+  approvalDetail?: string
+}
+
+export interface FileUploadResponse {
+  attachmentId?: number
+  fileName?: string
+  fileUrl?: string
+  fileSize?: number
+  fileType?: string
+}
+
+export interface OperationLogDTO {
+  id: number
+  applicationId: number
+  operatorId: number
+  operatorName?: string
+  operationType: number
+  operationTypeDesc?: string
+  oldStatus?: number
+  newStatus?: number
+  operationDetail?: string
+  createdAt: string
+}
+
+export interface PageApplication {
+  records: Application[]
+  total: number
+  size: number
+  current: number
+  pages: number
+}
+
+export interface PageUserRelation {
+  records: UserRelation[]
+  total: number
+  size: number
+  current: number
+  pages: number
+}
 
 // API 响应类型
-export type ApiResponse<T> = components['schemas']['ApiResponseVoid'] & { data?: T }
+export interface ApiResponse<T> {
+  code?: number
+  message?: string
+  data?: T
+}
 
 // 分页参数
 export interface PaginationParams {
@@ -463,5 +582,150 @@ export const gameTaskApi = {
   // 获取当前任务
   getCurrentTask(gameId: number) {
     return http.get<GameTaskRecord | null>(`/game/task/record/game/${gameId}/current`)
+  }
+}
+
+// Daily couple features
+export interface DailyItem {
+  id: number
+  creatorId: number
+  partnerId?: number
+  itemType: number
+  title: string
+  content?: string
+  status: number
+  priority: number
+  targetDate?: string
+  completedAt?: string
+  createdAt: string
+  updatedAt?: string
+}
+
+export interface DailyItemRequest {
+  partnerId?: number
+  itemType?: number
+  title: string
+  content?: string
+  priority?: number
+  targetDate?: string
+}
+
+export interface CoupleEvent {
+  id: number
+  creatorId: number
+  partnerId?: number
+  eventType: number
+  title: string
+  eventDate: string
+  repeatType: number
+  remindDaysBefore: number
+  note?: string
+  createdAt: string
+  updatedAt?: string
+}
+
+export interface CoupleEventRequest {
+  partnerId?: number
+  eventType?: number
+  title: string
+  eventDate: string
+  repeatType?: number
+  remindDaysBefore?: number
+  note?: string
+}
+
+export interface ApplicationTemplate {
+  id: number
+  creatorId: number
+  partnerId?: number
+  title: string
+  description: string
+  remark?: string
+  shared: boolean
+  usageCount: number
+  createdAt: string
+  updatedAt?: string
+}
+
+export interface ApplicationTemplateRequest {
+  partnerId?: number
+  title: string
+  description: string
+  remark?: string
+  shared?: boolean
+}
+
+export interface ReminderSummary {
+  pendingApprovalCount: number
+  todayDailyCount: number
+  overdueDailyCount: number
+  totalEventCount?: number
+  upcomingEventCount: number
+  pendingApprovals: Application[]
+  todayDailyItems: DailyItem[]
+  overdueDailyItems: DailyItem[]
+  upcomingEvents: CoupleEvent[]
+}
+
+export const dailyAPI = {
+  list(params?: { status?: number; itemType?: number; todayOnly?: boolean }) {
+    return http.get<DailyItem[]>('/daily-items', { params })
+  },
+  create(data: DailyItemRequest) {
+    return http.post<DailyItem>('/daily-items', data)
+  },
+  update(id: number, data: DailyItemRequest) {
+    return http.put<DailyItem>(`/daily-items/${id}`, data)
+  },
+  complete(id: number) {
+    return http.post<DailyItem>(`/daily-items/${id}/complete`)
+  },
+  archive(id: number) {
+    return http.post<DailyItem>(`/daily-items/${id}/archive`)
+  },
+  delete(id: number) {
+    return http.delete<void>(`/daily-items/${id}`)
+  }
+}
+
+export const coupleEventAPI = {
+  list() {
+    return http.get<CoupleEvent[]>('/couple-events')
+  },
+  upcoming(days = 30) {
+    return http.get<CoupleEvent[]>('/couple-events/upcoming', { params: { days } })
+  },
+  create(data: CoupleEventRequest) {
+    return http.post<CoupleEvent>('/couple-events', data)
+  },
+  update(id: number, data: CoupleEventRequest) {
+    return http.put<CoupleEvent>(`/couple-events/${id}`, data)
+  },
+  delete(id: number) {
+    return http.delete<void>(`/couple-events/${id}`)
+  }
+}
+
+export const applicationTemplateAPI = {
+  list() {
+    return http.get<ApplicationTemplate[]>('/application-templates')
+  },
+  create(data: ApplicationTemplateRequest) {
+    return http.post<ApplicationTemplate>('/application-templates', data)
+  },
+  update(id: number, data: ApplicationTemplateRequest) {
+    return http.put<ApplicationTemplate>(`/application-templates/${id}`, data)
+  },
+  use(id: number) {
+    return http.post<ApplicationTemplate>(`/application-templates/${id}/use`)
+  },
+  delete(id: number) {
+    return http.delete<void>(`/application-templates/${id}`)
+  }
+}
+
+export const reminderAPI = {
+  today() {
+    return http.get<ReminderSummary>('/reminders/today')
   }
 }

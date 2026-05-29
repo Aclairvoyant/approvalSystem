@@ -145,6 +145,21 @@ public class UserRelationServiceImpl extends ServiceImpl<UserRelationMapper, Use
     }
 
     @Override
+    public Long getActivePartnerId(Long userId) {
+        QueryWrapper<UserRelation> queryWrapper = new QueryWrapper<>();
+        queryWrapper.and(w -> w.eq("user_id", userId).or().eq("related_user_id", userId));
+        queryWrapper.eq("relation_type", 2);
+        queryWrapper.orderByDesc("updated_at");
+        queryWrapper.last("limit 1");
+
+        UserRelation relation = this.getOne(queryWrapper);
+        if (relation == null) {
+            return null;
+        }
+        return relation.getUserId().equals(userId) ? relation.getRelatedUserId() : relation.getUserId();
+    }
+
+    @Override
     @Transactional
     public void deleteRelation(Long userId, Long relatedUserId) {
         QueryWrapper<UserRelation> queryWrapper = new QueryWrapper<>();
