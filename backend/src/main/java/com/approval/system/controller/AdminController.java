@@ -1,6 +1,8 @@
 package com.approval.system.controller;
 
 import com.approval.system.common.response.ApiResponse;
+import com.approval.system.config.MiMoConfig;
+import com.approval.system.dto.MimoConfigResponse;
 import com.approval.system.entity.Application;
 import com.approval.system.entity.Notification;
 import com.approval.system.entity.User;
@@ -12,6 +14,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -34,12 +39,19 @@ public class AdminController {
     @Autowired
     private INotificationService notificationService;
 
+    @Autowired
+    private MiMoConfig miMoConfig;
+
     /**
      * 获取仪表盘统计数据
      */
     @GetMapping("/dashboard/stats")
     public ApiResponse<Map<String, Object>> getDashboardStats() {
         try {
+            if (!isCurrentUserAdmin()) {
+                return ApiResponse.fail(403, "没有管理员权限");
+            }
+
             Long userId = getCurrentUserId();
             if (userId == null) {
                 return ApiResponse.fail(401, "用户未登录");
@@ -135,6 +147,10 @@ public class AdminController {
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "10") Integer pageSize) {
         try {
+            if (!isCurrentUserAdmin()) {
+                return ApiResponse.fail(403, "没有管理员权限");
+            }
+
             Page<User> page = userService.getAllUsers(pageNum, pageSize);
             // 隐藏密码
             page.getRecords().forEach(user -> user.setPassword(null));
@@ -154,6 +170,10 @@ public class AdminController {
             @RequestParam(defaultValue = "10") Integer pageSize,
             @RequestParam(required = false) Integer status) {
         try {
+            if (!isCurrentUserAdmin()) {
+                return ApiResponse.fail(403, "没有管理员权限");
+            }
+
             Page<Application> page = new Page<>(pageNum, pageSize);
             LambdaQueryWrapper<Application> wrapper = new LambdaQueryWrapper<>();
             if (status != null) {
@@ -178,6 +198,10 @@ public class AdminController {
             @RequestParam(required = false) Integer sendStatus,
             @RequestParam(required = false) Integer notifyType) {
         try {
+            if (!isCurrentUserAdmin()) {
+                return ApiResponse.fail(403, "没有管理员权限");
+            }
+
             Page<Notification> page = new Page<>(pageNum, pageSize);
             LambdaQueryWrapper<Notification> wrapper = new LambdaQueryWrapper<>();
             if (sendStatus != null) {
@@ -203,6 +227,10 @@ public class AdminController {
             @PathVariable Long userId,
             @RequestParam Integer status) {
         try {
+            if (!isCurrentUserAdmin()) {
+                return ApiResponse.fail(403, "没有管理员权限");
+            }
+
             User user = userService.getById(userId);
             if (user == null) {
                 return ApiResponse.fail(404, "用户不存在");
@@ -226,6 +254,10 @@ public class AdminController {
             @PathVariable Long userId,
             @RequestParam Integer role) {
         try {
+            if (!isCurrentUserAdmin()) {
+                return ApiResponse.fail(403, "没有管理员权限");
+            }
+
             User user = userService.getById(userId);
             if (user == null) {
                 return ApiResponse.fail(404, "用户不存在");
@@ -249,6 +281,10 @@ public class AdminController {
             @PathVariable Long userId,
             @RequestParam Boolean enabled) {
         try {
+            if (!isCurrentUserAdmin()) {
+                return ApiResponse.fail(403, "没有管理员权限");
+            }
+
             User user = userService.getById(userId);
             if (user == null) {
                 return ApiResponse.fail(404, "用户不存在");
@@ -272,6 +308,10 @@ public class AdminController {
             @PathVariable Long userId,
             @RequestBody Map<String, String> updates) {
         try {
+            if (!isCurrentUserAdmin()) {
+                return ApiResponse.fail(403, "没有管理员权限");
+            }
+
             User user = userService.getById(userId);
             if (user == null) {
                 return ApiResponse.fail(404, "用户不存在");
@@ -324,6 +364,10 @@ public class AdminController {
             @PathVariable Long applicationId,
             @RequestParam(required = false) String approvalDetail) {
         try {
+            if (!isCurrentUserAdmin()) {
+                return ApiResponse.fail(403, "没有管理员权限");
+            }
+
             Long adminId = getCurrentUserId();
             if (adminId == null) {
                 return ApiResponse.fail(401, "用户未登录");
@@ -354,6 +398,10 @@ public class AdminController {
             @PathVariable Long applicationId,
             @RequestParam(required = false) String rejectReason) {
         try {
+            if (!isCurrentUserAdmin()) {
+                return ApiResponse.fail(403, "没有管理员权限");
+            }
+
             Long adminId = getCurrentUserId();
             if (adminId == null) {
                 return ApiResponse.fail(401, "用户未登录");
@@ -377,14 +425,85 @@ public class AdminController {
     }
 
     /**
+     * 获取 MiMo 配置（管理员用）
+     */
+    @GetMapping("/mimo/config")
+    public ApiResponse<MimoConfigResponse> getMimoConfig() {
+        try {
+            if (!isCurrentUserAdmin()) {
+                return ApiResponse.fail(403, "没有管理员权限");
+            }
+
+            String apiKey = miMoConfig.getApiKey();
+            boolean apiKeyConfigured = isConfiguredApiKey(apiKey);
+            MimoConfigResponse response = MimoConfigResponse.builder()
+                    .enabled(miMoConfig.getEnabled())
+                    .baseUrl(miMoConfig.getBaseUrl())
+                    .asrModel(miMoConfig.getAsrModel())
+                    .chatModel(miMoConfig.getChatModel())
+                    .apiKeyConfigured(apiKeyConfigured)
+                    .apiKeyMasked(apiKeyConfigured ? maskApiKey(apiKey) : "")
+                    .build();
+
+            return ApiResponse.success(response);
+        } catch (Exception e) {
+            log.error("获取 MiMo 配置失败", e);
+            return ApiResponse.fail(500, e.getMessage());
+        }
+    }
+
+    /**
      * 获取当前用户ID
      */
     private Long getCurrentUserId() {
-        Object principal = org.springframework.security.core.context.SecurityContextHolder.getContext()
-                .getAuthentication().getPrincipal();
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            return null;
+        }
+
+        Object principal = authentication.getPrincipal();
         if (principal instanceof Long) {
             return (Long) principal;
         }
         return null;
+    }
+
+    private boolean isCurrentUserAdmin() {
+        Long userId = getCurrentUserId();
+        if (userId == null) {
+            return false;
+        }
+
+        User user = userService.getById(userId);
+        return user != null && user.isAdmin();
+    }
+
+    private boolean isConfiguredApiKey(String apiKey) {
+        if (!StringUtils.hasText(apiKey)) {
+            return false;
+        }
+
+        String normalized = apiKey.trim().toLowerCase();
+        return !"your-mimo-api-key".equals(normalized)
+                && !"your-api-key".equals(normalized)
+                && !"your_api_key".equals(normalized)
+                && !"replace-with-your-mimo-api-key".equals(normalized)
+                && !normalized.contains("请替换");
+    }
+
+    private String maskApiKey(String apiKey) {
+        if (!isConfiguredApiKey(apiKey)) {
+            return "";
+        }
+
+        String trimmed = apiKey.trim();
+        int length = trimmed.length();
+        if (length <= 3) {
+            return "***";
+        }
+        if (length <= 8) {
+            return trimmed.substring(0, 1) + "***" + trimmed.substring(length - 1);
+        }
+        return trimmed.substring(0, 4) + "..." + trimmed.substring(length - 3);
     }
 }

@@ -1,8 +1,12 @@
 <template>
-  <div class="notifications-page">
-    <div class="page-header">
-      <h1>通知管理</h1>
-      <div class="header-actions">
+  <div class="admin-page notifications-page">
+    <div class="admin-page-header">
+      <div class="admin-page-heading">
+        <div class="admin-page-kicker">NOTIFICATIONS</div>
+        <h1 class="admin-page-title">通知管理</h1>
+        <p class="admin-page-subtitle">查看短信、邮件通知的创建与发送状态。</p>
+      </div>
+      <div class="admin-page-actions header-actions">
         <a-select v-model="notifyTypeFilter" placeholder="通知类型" style="width: 120px" allow-clear>
           <a-option :value="1">短信</a-option>
           <a-option :value="2">邮件</a-option>
@@ -12,7 +16,7 @@
           <a-option :value="2">已发送</a-option>
           <a-option :value="3">发送失败</a-option>
         </a-select>
-        <a-button @click="fetchNotifications">
+        <a-button :loading="loading" @click="fetchNotifications">
           <template #icon><icon-refresh /></template>
           刷新
         </a-button>
@@ -20,6 +24,7 @@
     </div>
 
     <a-table
+      class="admin-table desktop-only"
       :columns="columns"
       :data="notifications"
       :loading="loading"
@@ -62,12 +67,79 @@
       </template>
     </a-table>
 
+    <a-spin class="admin-mobile-spin mobile-only" :loading="loading">
+      <div class="admin-mobile-list">
+        <article
+          v-for="record in notifications"
+          :key="record.id"
+          class="admin-mobile-card"
+        >
+          <div class="admin-mobile-card-header">
+            <div>
+              <div class="admin-mobile-title">{{ record.notifyTitle || '未命名通知' }}</div>
+              <div class="admin-mobile-meta">
+                #{{ record.id }} · 申请 #{{ record.applicationId }} · {{ formatDate(record.createdAt) }}
+              </div>
+            </div>
+            <a-tag :color="getSendStatusColor(record.sendStatus)">
+              {{ getSendStatusText(record.sendStatus) }}
+            </a-tag>
+          </div>
+
+          <div class="admin-mobile-field-grid">
+            <div class="admin-mobile-field">
+              <div class="admin-mobile-field-label">通知类型</div>
+              <div class="admin-mobile-field-value">
+                <a-tag :color="getNotifyTypeColor(record.notifyType)">
+                  {{ getNotifyTypeText(record.notifyType) }}
+                </a-tag>
+              </div>
+            </div>
+            <div class="admin-mobile-field">
+              <div class="admin-mobile-field-label">接收用户 ID</div>
+              <div class="admin-mobile-field-value">{{ record.notifyUserId }}</div>
+            </div>
+            <div class="admin-mobile-field">
+              <div class="admin-mobile-field-label">手机号</div>
+              <div class="admin-mobile-field-value">{{ record.phone || '-' }}</div>
+            </div>
+            <div class="admin-mobile-field">
+              <div class="admin-mobile-field-label">邮箱</div>
+              <div class="admin-mobile-field-value">{{ record.email || '-' }}</div>
+            </div>
+            <div class="admin-mobile-field">
+              <div class="admin-mobile-field-label">发送时间</div>
+              <div class="admin-mobile-field-value">{{ formatDate(record.sentAt) }}</div>
+            </div>
+          </div>
+
+          <div class="admin-mobile-actions">
+            <a-button size="small" @click="viewDetail(record)">查看详情</a-button>
+          </div>
+        </article>
+
+        <div v-if="!notifications.length && !loading" class="admin-empty-state">
+          暂无通知数据
+        </div>
+
+        <div v-if="pagination.total > pagination.pageSize" class="admin-mobile-pagination">
+          <a-pagination
+            simple
+            :current="pagination.current"
+            :page-size="pagination.pageSize"
+            :total="pagination.total"
+            @change="handlePageChange"
+          />
+        </div>
+      </div>
+    </a-spin>
+
     <!-- 详情弹窗 -->
     <a-modal
       v-model:visible="detailVisible"
       title="通知详情"
       :footer="false"
-      width="700px"
+      :width="detailModalWidth"
       :mask-closable="false"
     >
       <a-descriptions :column="1" bordered v-if="currentNotification">
@@ -132,6 +204,7 @@ const notifyTypeFilter = ref<number | undefined>(undefined)
 const sendStatusFilter = ref<number | undefined>(undefined)
 const detailVisible = ref(false)
 const currentNotification = ref<Notification | null>(null)
+const detailModalWidth = 'min(700px, calc(100vw - 32px))'
 
 const pagination = ref({
   current: 1,

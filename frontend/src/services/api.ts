@@ -93,6 +93,14 @@ export interface ApplicationApprovalRequest {
   approvalDetail?: string
 }
 
+// 语音解析结果：转写原文 + 抽取出的申请字段
+export interface VoiceParseResult {
+  transcript: string
+  title?: string
+  description?: string
+  remark?: string
+}
+
 export interface FileUploadResponse {
   attachmentId?: number
   fileName?: string
@@ -169,6 +177,15 @@ export interface DashboardStats {
   activeUsers: number
 }
 
+export interface MimoConfigResponse {
+  enabled?: boolean
+  baseUrl?: string
+  asrModel?: string
+  chatModel?: string
+  apiKeyConfigured?: boolean
+  apiKeyMasked?: string
+}
+
 // 认证相关 API
 export const authAPI = {
   register(data: RegisterRequest) {
@@ -212,6 +229,13 @@ export const applicationAPI = {
   },
   sendVoiceNotification(id: number) {
     return http.post<void>(`/applications/${id}/send-voice-notification`)
+  },
+  // 语音解析：上传口述音频，返回转写文字与抽取出的申请字段（不创建申请）
+  parseVoice(audio: Blob, language: 'auto' | 'zh' | 'en' = 'zh') {
+    const formData = new FormData()
+    formData.append('file', audio, 'voice.wav')
+    formData.append('language', language)
+    return http.post<VoiceParseResult>('/applications/voice-parse', formData)
   },
   getMyApplications(params: PaginationParams & { status?: number }) {
     return http.get<PageApplication>('/applications/my-applications', { params })
@@ -339,6 +363,9 @@ export const adminAPI = {
     return http.post<void>(`/admin/applications/${applicationId}/reject`, null, {
       params: { rejectReason }
     })
+  },
+  getMimoConfig() {
+    return http.get<MimoConfigResponse>('/admin/mimo/config')
   },
 }
 

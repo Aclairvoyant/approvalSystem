@@ -3,15 +3,18 @@ package com.approval.system.controller;
 import com.approval.system.common.response.ApiResponse;
 import com.approval.system.dto.ApplicationCreateRequest;
 import com.approval.system.dto.ApplicationApprovalRequest;
+import com.approval.system.dto.VoiceParseResult;
 import com.approval.system.entity.Application;
 import com.approval.system.service.IApplicationService;
 import com.approval.system.service.IOperationLogService;
 import com.approval.system.service.IUserRelationService;
+import com.approval.system.service.IVoiceApplicationService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 @Slf4j
 @RestController
@@ -26,6 +29,26 @@ public class ApplicationController {
 
     @Autowired
     private IOperationLogService operationLogService;
+
+    @Autowired
+    private IVoiceApplicationService voiceApplicationService;
+
+    /**
+     * 语音解析申请内容：上传口述音频，返回 ASR 转写文字及抽取出的标题/描述/备注。
+     * 仅做解析回填，不创建申请；用户核对、选择审批人后再走创建接口。
+     */
+    @PostMapping(value = "/voice-parse", consumes = "multipart/form-data")
+    public ApiResponse<VoiceParseResult> parseVoice(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "language", required = false) String language) {
+        try {
+            VoiceParseResult result = voiceApplicationService.parseVoice(file, language);
+            return ApiResponse.success("解析成功", result);
+        } catch (Exception e) {
+            log.error("语音解析申请失败", e);
+            return ApiResponse.fail(400, e.getMessage());
+        }
+    }
 
     /**
      * 创建申请单

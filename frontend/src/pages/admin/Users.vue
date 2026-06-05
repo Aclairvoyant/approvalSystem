@@ -1,14 +1,21 @@
 <template>
-  <div class="users-page">
-    <div class="page-header">
-      <h1>用户管理</h1>
-      <a-button @click="fetchUsers">
-        <template #icon><icon-refresh /></template>
-        刷新
-      </a-button>
+  <div class="admin-page users-page">
+    <div class="admin-page-header">
+      <div class="admin-page-heading">
+        <div class="admin-page-kicker">USERS</div>
+        <h1 class="admin-page-title">用户管理</h1>
+        <p class="admin-page-subtitle">维护账号状态、角色与语音通知权限。</p>
+      </div>
+      <div class="admin-page-actions">
+        <a-button :loading="loading" @click="fetchUsers">
+          <template #icon><icon-refresh /></template>
+          刷新
+        </a-button>
+      </div>
     </div>
 
     <a-table
+      class="admin-table desktop-only"
       :columns="columns"
       :data="users"
       :loading="loading"
@@ -69,13 +76,98 @@
       </template>
     </a-table>
 
+    <a-spin class="admin-mobile-spin mobile-only" :loading="loading">
+      <div class="admin-mobile-list">
+        <article
+          v-for="record in users"
+          :key="record.id"
+          class="admin-mobile-card"
+        >
+          <div class="admin-mobile-card-header user-card-header">
+            <div class="user-card-identity">
+              <a-avatar :size="38">
+                <img v-if="record.avatar" :src="getAvatarUrl(record.avatar)" alt="avatar" />
+                <template v-else>{{ getAvatarText(record) }}</template>
+              </a-avatar>
+              <div>
+                <div class="admin-mobile-title">{{ record.realName || record.username }}</div>
+                <div class="admin-mobile-meta">#{{ record.id }} · {{ record.username }}</div>
+              </div>
+            </div>
+            <a-tag :color="record.status === 1 ? 'green' : 'red'">
+              {{ record.status === 1 ? '正常' : '禁用' }}
+            </a-tag>
+          </div>
+
+          <div class="admin-mobile-field-grid">
+            <div class="admin-mobile-field">
+              <div class="admin-mobile-field-label">角色</div>
+              <div class="admin-mobile-field-value">
+                <a-tag :color="record.role === 1 ? 'orange' : 'blue'">
+                  {{ record.role === 1 ? '管理员' : '普通用户' }}
+                </a-tag>
+              </div>
+            </div>
+            <div class="admin-mobile-field">
+              <div class="admin-mobile-field-label">语音通知</div>
+              <div class="admin-mobile-field-value">
+                <a-switch
+                  :model-value="record.voiceNotificationEnabled"
+                  @change="(value) => toggleVoiceNotification(record, Boolean(value))"
+                  :before-change="() => confirmVoiceNotificationChange(record)"
+                />
+              </div>
+            </div>
+            <div class="admin-mobile-field">
+              <div class="admin-mobile-field-label">手机号</div>
+              <div class="admin-mobile-field-value">{{ record.phone || '-' }}</div>
+            </div>
+            <div class="admin-mobile-field">
+              <div class="admin-mobile-field-label">邮箱</div>
+              <div class="admin-mobile-field-value">{{ record.email || '-' }}</div>
+            </div>
+            <div class="admin-mobile-field">
+              <div class="admin-mobile-field-label">创建时间</div>
+              <div class="admin-mobile-field-value">{{ formatDate(record.createdAt) }}</div>
+            </div>
+          </div>
+
+          <div class="admin-mobile-actions">
+            <a-button size="small" @click="showEditModal(record)">编辑</a-button>
+            <a-button
+              size="small"
+              :status="record.status === 1 ? 'warning' : 'success'"
+              @click="toggleUserStatus(record)"
+            >
+              {{ record.status === 1 ? '禁用' : '启用' }}
+            </a-button>
+            <a-button size="small" @click="showRoleModal(record)">修改角色</a-button>
+          </div>
+        </article>
+
+        <div v-if="!users.length && !loading" class="admin-empty-state">
+          暂无用户数据
+        </div>
+
+        <div v-if="pagination.total > pagination.pageSize" class="admin-mobile-pagination">
+          <a-pagination
+            simple
+            :current="pagination.current"
+            :page-size="pagination.pageSize"
+            :total="pagination.total"
+            @change="handlePageChange"
+          />
+        </div>
+      </div>
+    </a-spin>
+
     <!-- 编辑用户信息弹窗 -->
     <a-modal
       v-model:visible="editModalVisible"
       title="编辑用户信息"
       @ok="handleUpdateUserInfo"
       :ok-loading="updating"
-      width="500px"
+      :width="editModalWidth"
     >
       <a-form :model="editForm" layout="vertical">
         <a-form-item label="用户名" tooltip="用户名不可修改">
@@ -107,6 +199,7 @@
       title="修改用户角色"
       @ok="handleUpdateRole"
       :ok-loading="updating"
+      :width="roleModalWidth"
     >
       <a-form :model="roleForm">
         <a-form-item label="用户名">
@@ -143,6 +236,8 @@ const updating = ref(false)
 const roleModalVisible = ref(false)
 const editModalVisible = ref(false)
 const currentUser = ref<User | null>(null)
+const editModalWidth = 'min(500px, calc(100vw - 32px))'
+const roleModalWidth = 'min(520px, calc(100vw - 32px))'
 const roleForm = ref({
   role: 0
 })
@@ -316,7 +411,7 @@ const getAvatarText = (user: User): string => {
   return name ? name.charAt(0).toUpperCase() : 'U'
 }
 
-const formatDate = (date: string): string => {
+const formatDate = (date?: string): string => {
   if (!date) return '-'
   return new Date(date).toLocaleString('zh-CN')
 }

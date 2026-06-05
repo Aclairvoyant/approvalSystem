@@ -1,14 +1,18 @@
 <template>
-  <div class="applications-page">
-    <div class="page-header">
-      <h1>申请管理</h1>
-      <div class="header-actions">
+  <div class="admin-page applications-page">
+    <div class="admin-page-header">
+      <div class="admin-page-heading">
+        <div class="admin-page-kicker">APPLICATIONS</div>
+        <h1 class="admin-page-title">申请管理</h1>
+        <p class="admin-page-subtitle">查看全部审批申请，并处理仍处于待审批状态的记录。</p>
+      </div>
+      <div class="admin-page-actions header-actions">
         <a-select v-model="statusFilter" placeholder="状态筛选" style="width: 120px" allow-clear>
           <a-option :value="1">待审批</a-option>
           <a-option :value="2">已批准</a-option>
           <a-option :value="3">已驳回</a-option>
         </a-select>
-        <a-button @click="fetchApplications">
+        <a-button :loading="loading" @click="fetchApplications">
           <template #icon><icon-refresh /></template>
           刷新
         </a-button>
@@ -16,6 +20,7 @@
     </div>
 
     <a-table
+      class="admin-table desktop-only"
       :columns="columns"
       :data="applications"
       :loading="loading"
@@ -57,8 +62,81 @@
       </template>
     </a-table>
 
+    <a-spin class="admin-mobile-spin mobile-only" :loading="loading">
+      <div class="admin-mobile-list">
+        <article
+          v-for="record in applications"
+          :key="record.id"
+          class="admin-mobile-card"
+        >
+          <div class="admin-mobile-card-header">
+            <div>
+              <div class="admin-mobile-title">{{ record.title }}</div>
+              <div class="admin-mobile-meta">#{{ record.id }} · {{ formatDate(record.createdAt) }}</div>
+            </div>
+            <a-tag :color="getStatusColor(record.status)">
+              {{ getStatusText(record.status) }}
+            </a-tag>
+          </div>
+
+          <div class="admin-mobile-field-grid">
+            <div class="admin-mobile-field">
+              <div class="admin-mobile-field-label">申请人 ID</div>
+              <div class="admin-mobile-field-value">{{ record.applicantId }}</div>
+            </div>
+            <div class="admin-mobile-field">
+              <div class="admin-mobile-field-label">审批人 ID</div>
+              <div class="admin-mobile-field-value">{{ record.approverId }}</div>
+            </div>
+            <div class="admin-mobile-field">
+              <div class="admin-mobile-field-label">事项描述</div>
+              <div class="admin-mobile-field-value">{{ record.description || '-' }}</div>
+            </div>
+            <div class="admin-mobile-field">
+              <div class="admin-mobile-field-label">备注</div>
+              <div class="admin-mobile-field-value">{{ record.remark || '-' }}</div>
+            </div>
+          </div>
+
+          <div class="admin-mobile-actions">
+            <a-button size="small" @click="viewDetail(record)">查看详情</a-button>
+            <a-button
+              v-if="record.status === 1"
+              size="small"
+              status="success"
+              @click="approveApplication(record)"
+            >
+              批准
+            </a-button>
+            <a-button
+              v-if="record.status === 1"
+              size="small"
+              status="danger"
+              @click="rejectApplication(record)"
+            >
+              驳回
+            </a-button>
+          </div>
+        </article>
+
+        <div v-if="!applications.length && !loading" class="admin-empty-state">
+          暂无申请数据
+        </div>
+
+        <div v-if="pagination.total > pagination.pageSize" class="admin-mobile-pagination">
+          <a-pagination
+            simple
+            :current="pagination.current"
+            :page-size="pagination.pageSize"
+            :total="pagination.total"
+            @change="handlePageChange"
+          />
+        </div>
+      </div>
+    </a-spin>
+
     <!-- 详情弹窗 -->
-    <a-modal v-model:visible="detailVisible" title="申请详情" :footer="false" width="600px">
+    <a-modal v-model:visible="detailVisible" title="申请详情" :footer="false" :width="detailModalWidth">
       <a-descriptions :column="1" bordered v-if="currentApplication">
         <a-descriptions-item label="申请ID">{{ currentApplication.id }}</a-descriptions-item>
         <a-descriptions-item label="事项标题">{{ currentApplication.title }}</a-descriptions-item>
@@ -137,6 +215,7 @@ const detailVisible = ref(false)
 const approveModalVisible = ref(false)
 const rejectModalVisible = ref(false)
 const currentApplication = ref<Application | null>(null)
+const detailModalWidth = 'min(600px, calc(100vw - 32px))'
 
 const approvalForm = ref({
   approvalDetail: ''

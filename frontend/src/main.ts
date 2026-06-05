@@ -11,6 +11,8 @@ import '@arco-design/web-vue/dist/arco.css'
 import Vant from 'vant'
 import 'vant/lib/index.css'
 
+import './styles/admin.css'
+
 const app = createApp(App)
 
 app.use(store)

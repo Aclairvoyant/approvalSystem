@@ -109,6 +109,25 @@
                 <van-icon name="records-o" class="template-cell-icon" />
               </template>
             </van-cell>
+            <van-cell
+              title="语音填写"
+              value="说一句话自动填表"
+              is-link
+              clickable
+              @click="startVoiceFill"
+            >
+              <template #icon>
+                <van-icon name="volume-o" class="voice-cell-icon" />
+              </template>
+            </van-cell>
+            <van-cell v-if="voiceTranscript" class="voice-transcript">
+              <template #title>
+                <div class="voice-transcript-label">
+                  <van-icon name="chat-o" /> 识别原文
+                </div>
+                <div class="voice-transcript-text">{{ voiceTranscript }}</div>
+              </template>
+            </van-cell>
             <van-field
               v-model="newApplication.title"
               label="事项标题"
@@ -188,6 +207,44 @@
         @confirm="onApproverConfirm"
         @cancel="showApproverPicker = false"
       />
+    </van-popup>
+
+    <!-- 语音录制浮层 -->
+    <van-popup
+      v-model:show="showVoiceSheet"
+      position="bottom"
+      round
+      :close-on-click-overlay="false"
+    >
+      <div class="voice-recorder">
+        <div class="voice-recorder-title">
+          {{ voiceParsing ? '正在识别...' : (recording ? '正在聆听' : '语音填写') }}
+        </div>
+        <div class="voice-recorder-hint">
+          {{ voiceParsing ? '请稍候，大模型整理中' : '说出你要申请的事情和理由' }}
+        </div>
+
+        <div class="voice-mic" :class="{ active: recording, parsing: voiceParsing }">
+          <van-loading v-if="voiceParsing" color="#fff" size="32px" />
+          <van-icon v-else name="volume" size="40" />
+        </div>
+
+        <div v-if="recording" class="voice-timer">{{ formatDuration(recordSeconds) }}</div>
+
+        <div class="voice-recorder-actions">
+          <van-button round plain @click="cancelVoice" :disabled="voiceParsing">
+            取消
+          </van-button>
+          <van-button
+            v-if="recording"
+            round
+            type="primary"
+            @click="finishRecording"
+          >
+            完成
+          </van-button>
+        </div>
+      </div>
     </van-popup>
 
     <!-- 申请模板选择器 -->
@@ -276,7 +333,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast, showSuccessToast, showLoadingToast, closeToast, showConfirmDialog } from 'vant'
 import {
@@ -288,6 +345,7 @@ import {
   type ApplicationTemplate,
 } from '@/services/api'
 import { useUserStore } from '@/store/modules/user'
+import { startRecording, isRecordingSupported, type RecorderHandle } from '@/utils/wavRecorder'
 
 const router = useRouter()
 const route = useRoute()
@@ -350,6 +408,107 @@ const newApplication = ref({
   remark: '',
   sendVoiceNotification: false
 })
+
+// 语音填写
+const showVoiceSheet = ref(false)
+const recording = ref(false)
+const voiceParsing = ref(false)
+const voiceTranscript = ref('')
+const recordSeconds = ref(0)
+let recorderHandle: RecorderHandle | null = null
+let recordTimer: ReturnType<typeof setInterval> | null = null
+
+const formatDuration = (sec: number): string => {
+  const m = Math.floor(sec / 60).toString().padStart(2, '0')
+  const s = (sec % 60).toString().padStart(2, '0')
+  return `${m}:${s}`
+}
+
+const clearRecordTimer = (): void => {
+  if (recordTimer) {
+    clearInterval(recordTimer)
+    recordTimer = null
+  }
+}
+
+// 入口：开始语音填写
+const startVoiceFill = async (): Promise<void> => {
+  if (!isRecordingSupported()) {
+    showToast('当前浏览器不支持录音，请手动填写')
+    return
+  }
+  voiceTranscript.value = ''
+  showVoiceSheet.value = true
+  voiceParsing.value = false
+  recordSeconds.value = 0
+  try {
+    recorderHandle = await startRecording()
+    recording.value = true
+    recordTimer = setInterval(() => {
+      recordSeconds.value++
+      // 上限 60 秒，自动停止
+      if (recordSeconds.value >= 60) {
+        finishRecording()
+      }
+    }, 1000)
+  } catch (error: any) {
+    recording.value = false
+    showVoiceSheet.value = false
+    showToast(error?.message || '无法访问麦克风，请检查权限')
+  }
+}
+
+// 结束录音并解析
+const finishRecording = async (): Promise<void> => {
+  if (!recorderHandle || !recording.value) return
+  clearRecordTimer()
+  recording.value = false
+
+  let audioBlob: Blob
+  try {
+    audioBlob = await recorderHandle.stop()
+  } catch (error: any) {
+    recorderHandle = null
+    showVoiceSheet.value = false
+    showToast(error?.message || '录音处理失败')
+    return
+  }
+  recorderHandle = null
+
+  if (!audioBlob || audioBlob.size <= 44) {
+    showVoiceSheet.value = false
+    showToast('没有录到声音，请重试')
+    return
+  }
+
+  voiceParsing.value = true
+  try {
+    const result = await applicationAPI.parseVoice(audioBlob, 'zh')
+    voiceTranscript.value = result.transcript || ''
+    if (result.title) newApplication.value.title = result.title
+    if (result.description) newApplication.value.description = result.description
+    if (result.remark) newApplication.value.remark = result.remark
+    selectedTemplateName.value = '语音填写'
+    showVoiceSheet.value = false
+    showSuccessToast('已填入，请核对')
+  } catch (error: any) {
+    showToast(error?.message || '语音解析失败，请重试')
+  } finally {
+    voiceParsing.value = false
+  }
+}
+
+// 取消语音
+const cancelVoice = (): void => {
+  clearRecordTimer()
+  if (recorderHandle) {
+    recorderHandle.cancel()
+    recorderHandle = null
+  }
+  recording.value = false
+  voiceParsing.value = false
+  showVoiceSheet.value = false
+}
 
 // 审批人选择列 - 使用后端返回的 otherUserId 和 otherUserName
 const approverColumns = computed(() => {
@@ -553,6 +712,7 @@ const submitApplication = async (): Promise<void> => {
     selectedTemplateName.value = ''
     selectedApproverName.value = ''
     uploadFileList.value = []
+    voiceTranscript.value = ''
 
     // 刷新列表
     onRefresh()
@@ -662,6 +822,14 @@ onMounted(() => {
   loadRelations()
   loadHiddenApplications()
   applyRoutePrefill()
+})
+
+onUnmounted(() => {
+  clearRecordTimer()
+  if (recorderHandle) {
+    recorderHandle.cancel()
+    recorderHandle = null
+  }
 })
 </script>
 
@@ -781,6 +949,96 @@ onMounted(() => {
   margin-right: 8px;
   color: #667eea;
   line-height: 24px;
+}
+
+.voice-cell-icon {
+  margin-right: 8px;
+  color: #07c160;
+  line-height: 24px;
+}
+
+.voice-transcript {
+  background: #f7f8fa;
+}
+
+.voice-transcript-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #969799;
+  margin-bottom: 4px;
+}
+
+.voice-transcript-text {
+  font-size: 13px;
+  color: #646566;
+  line-height: 1.5;
+}
+
+.voice-recorder {
+  padding: 28px 24px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.voice-recorder-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #323233;
+}
+
+.voice-recorder-hint {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #969799;
+  text-align: center;
+}
+
+.voice-mic {
+  margin: 24px 0 12px;
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.voice-mic.active {
+  animation: voice-pulse 1.4s ease-in-out infinite;
+}
+
+.voice-mic.parsing {
+  background: linear-gradient(135deg, #969799 0%, #646566 100%);
+  box-shadow: none;
+}
+
+@keyframes voice-pulse {
+  0% { transform: scale(1); box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4); }
+  50% { transform: scale(1.08); box-shadow: 0 8px 28px rgba(102, 126, 234, 0.6); }
+  100% { transform: scale(1); box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4); }
+}
+
+.voice-timer {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  color: #323233;
+  margin-bottom: 8px;
+}
+
+.voice-recorder-actions {
+  margin-top: 16px;
+  display: flex;
+  gap: 16px;
+}
+
+.voice-recorder-actions .van-button {
+  min-width: 100px;
 }
 
 .template-picker {

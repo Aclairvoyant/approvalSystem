@@ -114,6 +114,11 @@ const routes: RouteRecordRaw[] = [
         name: 'AdminNotifications',
         component: () => import('@/pages/admin/Notifications.vue'),
       },
+      {
+        path: 'system',
+        name: 'AdminSystem',
+        component: () => import('@/pages/admin/System.vue'),
+      },
     ],
   },
 ]

@@ -1,46 +1,49 @@
 <template>
   <div class="admin-layout">
-    <div class="admin-sidebar">
+    <aside class="admin-sidebar">
       <div class="logo">
         <div class="logo-icon">
           <icon-apps />
         </div>
         <div class="logo-text">审批管理系统</div>
       </div>
-      <nav class="menu">
-        <router-link to="/admin/dashboard" class="menu-item" :class="{ active: isActive('dashboard') }">
-          <icon-dashboard class="menu-icon" />
-          <span>仪表盘</span>
-        </router-link>
-        <router-link to="/admin/applications" class="menu-item" :class="{ active: isActive('applications') }">
-          <icon-file class="menu-icon" />
-          <span>申请管理</span>
-        </router-link>
-        <router-link to="/admin/users" class="menu-item" :class="{ active: isActive('users') }">
-          <icon-user-group class="menu-icon" />
-          <span>用户管理</span>
-        </router-link>
-        <router-link to="/admin/notifications" class="menu-item" :class="{ active: isActive('notifications') }">
-          <icon-notification class="menu-icon" />
-          <span>通知管理</span>
+
+      <nav class="menu" aria-label="后台导航">
+        <router-link
+          v-for="item in adminMenu"
+          :key="item.path"
+          :to="item.path"
+          class="menu-item"
+          :class="{ active: isActive(item.path) }"
+        >
+          <component :is="item.icon" class="menu-icon" />
+          <span>{{ item.label }}</span>
         </router-link>
       </nav>
+
       <div class="sidebar-footer">
         <div class="version-info">
           <icon-code-square class="version-icon" />
           <span>v1.0.0</span>
         </div>
       </div>
-    </div>
+    </aside>
+
     <div class="admin-content">
-      <div class="admin-header">
-        <div class="header-breadcrumb">
-          <icon-home />
-          <span class="breadcrumb-divider">/</span>
-          <span class="breadcrumb-current">{{ currentPageTitle }}</span>
+      <header class="admin-header">
+        <div class="header-left">
+          <a-button class="mobile-menu-button" type="text" @click="mobileMenuVisible = true">
+            <template #icon><icon-menu-unfold /></template>
+          </a-button>
+          <div class="header-breadcrumb">
+            <icon-home />
+            <span class="breadcrumb-divider">/</span>
+            <span class="breadcrumb-current">{{ currentPageTitle }}</span>
+          </div>
         </div>
+
         <div class="user-info">
-          <a-avatar :size="36" :style="{ backgroundColor: '#667eea' }">
+          <a-avatar :size="36" :style="{ backgroundColor: '#2563eb' }">
             {{ getInitials(userStore.realName || userStore.username) }}
           </a-avatar>
           <div class="user-details">
@@ -64,16 +67,40 @@
             </template>
           </a-dropdown>
         </div>
-      </div>
-      <div class="admin-main">
+      </header>
+
+      <main class="admin-main">
         <router-view />
-      </div>
+      </main>
     </div>
+
+    <a-drawer
+      v-model:visible="mobileMenuVisible"
+      title="后台导航"
+      placement="left"
+      :width="288"
+      :footer="false"
+      unmount-on-close
+    >
+      <nav class="mobile-menu" aria-label="手机后台导航">
+        <router-link
+          v-for="item in adminMenu"
+          :key="item.path"
+          :to="item.path"
+          class="mobile-menu-item"
+          :class="{ active: isActive(item.path) }"
+          @click="mobileMenuVisible = false"
+        >
+          <component :is="item.icon" class="menu-icon" />
+          <span>{{ item.label }}</span>
+        </router-link>
+      </nav>
+    </a-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/store/modules/user'
 import { Message } from '@arco-design/web-vue'
@@ -88,25 +115,36 @@ import {
   IconDown,
   IconUser,
   IconSettings,
-  IconExport
+  IconExport,
+  IconMenuUnfold
 } from '@arco-design/web-vue/es/icon'
+
+interface AdminMenuItem {
+  path: string
+  label: string
+  icon: Component
+}
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
+const mobileMenuVisible = ref(false)
+
+const adminMenu: AdminMenuItem[] = [
+  { path: '/admin/dashboard', label: '仪表盘', icon: IconDashboard },
+  { path: '/admin/applications', label: '申请管理', icon: IconFile },
+  { path: '/admin/users', label: '用户管理', icon: IconUserGroup },
+  { path: '/admin/notifications', label: '通知管理', icon: IconNotification },
+  { path: '/admin/system', label: '系统配置', icon: IconSettings }
+]
 
 const currentPageTitle = computed(() => {
-  const titles: Record<string, string> = {
-    '/admin/dashboard': '仪表盘',
-    '/admin/applications': '申请管理',
-    '/admin/users': '用户管理',
-    '/admin/notifications': '通知管理'
-  }
-  return titles[route.path] || '管理后台'
+  const current = adminMenu.find((item) => route.path === item.path || route.path.startsWith(`${item.path}/`))
+  return current?.label || '管理后台'
 })
 
-const isActive = (name: string): boolean => {
-  return route.path.includes(name)
+const isActive = (path: string): boolean => {
+  return route.path === path || route.path.startsWith(`${path}/`)
 }
 
 const getInitials = (name: string): string => {
@@ -130,115 +168,111 @@ const handleUserMenuSelect = (value: string | number): void => {
 <style scoped>
 .admin-layout {
   display: flex;
-  height: 100vh;
-  background: #f5f6f8;
+  min-height: 100vh;
+  overflow: hidden;
+  background: var(--admin-bg);
 }
 
 .admin-sidebar {
-  width: 260px;
-  background: linear-gradient(180deg, #1d2532 0%, #0f1419 100%);
-  color: white;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.1);
   position: relative;
   z-index: 100;
+  display: flex;
+  width: 260px;
+  flex: 0 0 260px;
+  flex-direction: column;
+  color: #ffffff;
+  background: #172033;
+  box-shadow: 8px 0 24px rgba(23, 32, 51, 0.12);
 }
 
 .logo {
-  padding: 24px 20px;
   display: flex;
   align-items: center;
   gap: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 22px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .logo-icon {
-  width: 42px;
-  height: 42px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 10px;
   display: flex;
+  width: 40px;
+  height: 40px;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  color: #93c5fd;
+  background: rgba(37, 99, 235, 0.16);
+  font-size: 22px;
 }
 
 .logo-text {
-  font-size: 17px;
+  min-width: 0;
+  color: #f8fafc;
+  font-size: 16px;
   font-weight: 700;
-  letter-spacing: 0.3px;
-  background: linear-gradient(135deg, #ffffff 0%, #e0e7ff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .menu {
   flex: 1;
-  padding: 16px 12px;
+  padding: 14px 10px;
   overflow-y: auto;
 }
 
-.menu-item {
+.menu-item,
+.mobile-menu-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 16px;
-  color: rgba(255, 255, 255, 0.7);
-  text-decoration: none;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  border-radius: 10px;
-  margin-bottom: 6px;
-  position: relative;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.72);
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 550;
+  line-height: 1.3;
+  text-decoration: none;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.menu-item + .menu-item {
+  margin-top: 4px;
 }
 
 .menu-icon {
+  flex: 0 0 auto;
   font-size: 18px;
-  transition: transform 0.3s;
 }
 
-.menu-item:hover {
-  color: white;
-  background: rgba(255, 255, 255, 0.08);
-  transform: translateX(4px);
-}
-
-.menu-item:hover .menu-icon {
-  transform: scale(1.1);
-}
-
+.menu-item:hover,
 .menu-item.active {
-  color: white;
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.09);
 }
 
 .menu-item.active::before {
-  content: '';
   position: absolute;
-  left: 0;
   top: 50%;
-  transform: translateY(-50%);
+  left: 0;
   width: 3px;
-  height: 24px;
-  background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
-  border-radius: 0 2px 2px 0;
+  height: 22px;
+  border-radius: 0 3px 3px 0;
+  background: #60a5fa;
+  content: '';
+  transform: translateY(-50%);
 }
 
 .sidebar-footer {
   padding: 16px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .version-info {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.52);
   font-size: 13px;
 }
 
@@ -247,25 +281,39 @@ const handleUserMenuSelect = (value: string | number): void => {
 }
 
 .admin-content {
-  flex: 1;
   display: flex;
+  flex: 1;
+  min-width: 0;
   flex-direction: column;
   overflow: hidden;
 }
 
 .admin-header {
-  padding: 16px 32px;
-  background: white;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   position: relative;
   z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 28px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--admin-border);
+}
+
+.header-left {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.mobile-menu-button {
+  display: none;
 }
 
 .header-breadcrumb {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 8px;
   color: #86909c;
@@ -277,32 +325,42 @@ const handleUserMenuSelect = (value: string | number): void => {
 }
 
 .breadcrumb-current {
-  color: #1d2129;
-  font-weight: 500;
+  overflow: hidden;
+  color: var(--admin-text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .user-info {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  min-width: 0;
 }
 
 .user-details {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 2px;
 }
 
 .user-name {
+  max-width: 132px;
+  overflow: hidden;
+  color: var(--admin-text);
   font-size: 14px;
-  font-weight: 600;
-  color: #1d2129;
+  font-weight: 650;
   line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .user-role {
+  color: var(--admin-text-muted);
   font-size: 12px;
-  color: #86909c;
   line-height: 1.2;
 }
 
@@ -312,8 +370,27 @@ const handleUserMenuSelect = (value: string | number): void => {
 
 .admin-main {
   flex: 1;
+  min-width: 0;
+  overflow-x: hidden;
   overflow-y: auto;
-  padding: 24px 32px;
+  padding: 24px 28px;
+}
+
+.mobile-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mobile-menu-item {
+  min-height: 44px;
+  color: #4e5969;
+  background: #f7f8fa;
+}
+
+.mobile-menu-item.active {
+  color: #1d4ed8;
+  background: #eaf2ff;
 }
 
 :deep(.arco-dropdown-option) {
@@ -328,38 +405,59 @@ const handleUserMenuSelect = (value: string | number): void => {
 
 :deep(.arco-avatar) {
   font-weight: 600;
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
 }
 
-/* Scrollbar styling */
 .menu::-webkit-scrollbar,
 .admin-main::-webkit-scrollbar {
   width: 6px;
 }
 
-.menu::-webkit-scrollbar-track {
+.menu::-webkit-scrollbar-track,
+.admin-main::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.menu::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 3px;
-}
-
-.menu::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-.admin-main::-webkit-scrollbar-track {
-  background: #f5f6f8;
-}
-
+.menu::-webkit-scrollbar-thumb,
 .admin-main::-webkit-scrollbar-thumb {
-  background: #c9cdd4;
   border-radius: 3px;
+  background: rgba(148, 163, 184, 0.6);
 }
 
-.admin-main::-webkit-scrollbar-thumb:hover {
-  background: #a5aab3;
+@media (max-width: 768px) {
+  .admin-layout {
+    display: block;
+    min-width: 0;
+    overflow-x: hidden;
+  }
+
+  .admin-sidebar {
+    display: none;
+  }
+
+  .admin-content {
+    min-height: 100vh;
+  }
+
+  .admin-header {
+    gap: 10px;
+    padding: 12px 14px;
+  }
+
+  .mobile-menu-button {
+    display: inline-flex;
+    flex: 0 0 auto;
+  }
+
+  .header-breadcrumb {
+    font-size: 13px;
+  }
+
+  .user-details {
+    display: none;
+  }
+
+  .admin-main {
+    padding: 16px 14px 24px;
+  }
 }
 </style>
