@@ -1,0 +1,12 @@
+{
+  "id": "adjust-gobang-ai-review-trigger",
+  "title": "调整五子棋 AI 复盘触发方式和棋盘建议标记尺寸",
+  "status": "completed",
+  "complexity": "M",
+  "risk": "low",
+  "domain": "frontend",
+  "currentPhase": "completed",
+  "nextAction": "已完成普通回放与 AI 复盘触发拆分，并缩小棋盘建议标记",
+  "createdAt": "2026-06-05T20:40:00+08:00",
+  "branch": "codex/gobang-game"
+}
