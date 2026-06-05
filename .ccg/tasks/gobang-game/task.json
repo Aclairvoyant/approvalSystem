@@ -1,0 +1,12 @@
+{
+  "id": "gobang-game",
+  "title": "开发五子棋小游戏，支持与对象对局、悔棋、认输和全局回放",
+  "status": "in_progress",
+  "complexity": "L+",
+  "risk": "medium",
+  "domain": "fullstack",
+  "currentPhase": "planning",
+  "nextAction": "等待用户审阅方案二设计文档",
+  "createdAt": "2026-06-05T18:51:09+08:00",
+  "branch": "master"
+}
