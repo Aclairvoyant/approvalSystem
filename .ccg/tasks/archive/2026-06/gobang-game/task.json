@@ -1,0 +1,12 @@
+{
+  "id": "gobang-game",
+  "title": "开发五子棋小游戏，修复回放和棋盘交互并加入 AI 复盘",
+  "status": "completed",
+  "complexity": "L+",
+  "risk": "medium",
+  "domain": "fullstack",
+  "currentPhase": "completed",
+  "nextAction": "已完成，按用户要求跳过审查阶段并归档",
+  "createdAt": "2026-06-05T18:51:09+08:00",
+  "branch": "codex/gobang-game"
+}
