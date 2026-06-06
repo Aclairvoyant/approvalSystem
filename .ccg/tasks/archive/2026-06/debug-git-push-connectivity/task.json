@@ -1,0 +1,12 @@
+{
+  "id": "debug-git-push-connectivity",
+  "title": "诊断 GitHub push 连接失败",
+  "status": "in_progress",
+  "complexity": "S",
+  "risk": "low",
+  "domain": "devops",
+  "currentPhase": "completed",
+  "nextAction": "归档任务",
+  "createdAt": "2026-06-06T08:00:52Z",
+  "branch": "codex/gobang-game"
+}
