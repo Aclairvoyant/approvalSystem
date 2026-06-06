@@ -82,6 +82,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/mobile/GameRoom.vue'),
       },
       {
+        path: 'gobang/room/:id',
+        name: 'MobileGobangRoom',
+        component: () => import('@/pages/mobile/GobangRoom.vue'),
+      },
+      {
         path: 'game/tasks',
         name: 'MobileGameTasks',
         component: () => import('@/pages/mobile/GameTasks.vue'),
