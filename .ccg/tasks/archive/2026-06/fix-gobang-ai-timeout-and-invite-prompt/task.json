@@ -1,0 +1,12 @@
+{
+  "id": "fix-gobang-ai-timeout-and-invite-prompt",
+  "title": "修复五子棋 AI 复盘超时和邀请对象登录提示",
+  "status": "completed",
+  "complexity": "M",
+  "risk": "medium",
+  "domain": "fullstack",
+  "currentPhase": "completed",
+  "nextAction": "已完成 AI 复盘超时修复和登录后五子棋邀请弹窗",
+  "createdAt": "2026-06-05T20:50:00+08:00",
+  "branch": "codex/gobang-game"
+}

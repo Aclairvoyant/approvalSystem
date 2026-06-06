@@ -30,11 +30,72 @@
 </template>
 
 <script setup lang="ts">
-import { useRoute } from 'vue-router'
+import { onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { showConfirmDialog, showToast } from 'vant'
+import {
+  GobangGameStatus,
+  gobangApi,
+  type GobangGame
+} from '@/services/gobangApi'
+import { useUserStore } from '@/store/modules/user'
 
 const route = useRoute()
+const router = useRouter()
+const userStore = useUserStore()
+const inviteChecked = ref(false)
 
 const isActive = (name: string): boolean => route.path.includes(name)
+
+function normalizeGobangGames(response: unknown): GobangGame[] {
+  if (Array.isArray(response)) return response as GobangGame[]
+  if (typeof response === 'object' && response !== null && 'records' in response) {
+    const records = (response as { records?: unknown }).records
+    return Array.isArray(records) ? records as GobangGame[] : []
+  }
+  return []
+}
+
+function findPendingInvite(games: GobangGame[]): GobangGame | null {
+  return games.find(game =>
+    game.gameStatus === GobangGameStatus.WAITING &&
+    game.invitedPlayerId === userStore.userId &&
+    !game.whitePlayerId
+  ) ?? null
+}
+
+async function checkPendingGobangInvite(): Promise<void> {
+  if (inviteChecked.value || !userStore.userId) return
+  if (route.path.includes('/mobile/gobang/room')) return
+
+  inviteChecked.value = true
+  try {
+    const response = await gobangApi.getUserGames(GobangGameStatus.WAITING, 1, 20)
+    const invite = findPendingInvite(normalizeGobangGames(response))
+    if (!invite) return
+
+    try {
+      await showConfirmDialog({
+        title: '五子棋邀请',
+        message: `${invite.blackPlayerName || '你的对象'} 邀请你加入五子棋房间 ${invite.gameCode}`,
+        confirmButtonText: '加入',
+        cancelButtonText: '稍后'
+      })
+    } catch {
+      return
+    }
+
+    const joinedGame = await gobangApi.joinGame(invite.gameCode)
+    showToast({ type: 'success', message: '已加入五子棋房间' })
+    router.push(`/mobile/gobang/room/${joinedGame.id}`)
+  } catch (error: any) {
+    showToast({ type: 'fail', message: error.message || '五子棋邀请加载失败' })
+  }
+}
+
+onMounted(() => {
+  void checkPendingGobangInvite()
+})
 </script>
 
 <style scoped>

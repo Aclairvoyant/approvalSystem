@@ -1,0 +1,13 @@
+{"path":"backend/src/main/java/com/approval/system/entity/Game.java","reason":"games 表实体，已有 boardData 可用于五子棋棋盘状态"}
+{"path":"backend/src/main/java/com/approval/system/entity/GameMove.java","reason":"game_moves 操作历史，已有 moveData 可用于落子、悔棋、认输与回放"}
+{"path":"backend/src/main/java/com/approval/system/service/impl/GameServiceImpl.java","reason":"现有房间创建、加入、列表、结束和飞行棋动作服务"}
+{"path":"backend/src/main/java/com/approval/system/websocket/GameWebSocketController.java","reason":"现有游戏实时消息入口，需要新增五子棋动作或拆分控制器"}
+{"path":"backend/src/main/java/com/approval/system/websocket/GameMessage.java","reason":"现有 WebSocket 消息类型，需要新增五子棋消息"}
+{"path":"frontend/src/services/api.ts","reason":"前端游戏 API 类型和请求封装"}
+{"path":"frontend/src/services/websocket.ts","reason":"前端 STOMP 客户端，需要新增五子棋消息发送方法"}
+{"path":"frontend/src/store/modules/game.ts","reason":"前端游戏状态 store，需要支持 gameType、boardData、回放状态"}
+{"path":"frontend/src/pages/mobile/GameLobby.vue","reason":"游戏大厅创建房间与历史列表，需要选择/展示玩法"}
+{"path":"frontend/src/pages/mobile/GameRoom.vue","reason":"游戏房间页，需要按玩法渲染飞行棋或五子棋"}
+{"path":"frontend/src/components/ChessBoard.vue","reason":"现有飞行棋棋盘组件，五子棋应新增独立组件而非复用"}
+{"path":"database.sql","reason":"根初始化脚本，需要同步 games 表 game_type 字段"}
+{"path":"backend/src/main/resources/db/migration","reason":"迁移目录已有 V2-V5，五子棋需要新增 V6 迁移"}

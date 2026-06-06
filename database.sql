@@ -235,6 +235,86 @@ CREATE TABLE game_moves (
   INDEX idx_created_at (created_at)
 ) COMMENT='游戏操作历史表';
 
+-- Gobang game tables
+CREATE TABLE gobang_games (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT 'Gobang game ID',
+  game_code VARCHAR(20) NOT NULL UNIQUE COMMENT '6-digit room code',
+  black_player_id BIGINT NOT NULL COMMENT 'Black player ID',
+  invited_player_id BIGINT NOT NULL COMMENT 'Invited partner ID',
+  white_player_id BIGINT COMMENT 'White player ID',
+  current_turn TINYINT NOT NULL DEFAULT 1 COMMENT '1=black,2=white',
+  game_status TINYINT NOT NULL DEFAULT 1 COMMENT '1=waiting,2=playing,3=finished,4=cancelled',
+  winner_id BIGINT COMMENT 'Winner user ID',
+  board_data JSON COMMENT 'Board snapshot JSON',
+  last_move_id BIGINT COMMENT 'Last move ID',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Created time',
+  started_at DATETIME COMMENT 'Started time',
+  ended_at DATETIME COMMENT 'Ended time',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated time',
+  FOREIGN KEY (black_player_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (invited_player_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (white_player_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (winner_id) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_gobang_game_code (game_code),
+  INDEX idx_gobang_black_player (black_player_id),
+  INDEX idx_gobang_invited_player (invited_player_id),
+  INDEX idx_gobang_white_player (white_player_id),
+  INDEX idx_gobang_game_status (game_status),
+  INDEX idx_gobang_created_at (created_at),
+  INDEX idx_gobang_pair_status (black_player_id, invited_player_id, game_status)
+) COMMENT='Gobang game table';
+
+CREATE TABLE gobang_moves (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT 'Gobang move ID',
+  game_id BIGINT NOT NULL COMMENT 'Gobang game ID',
+  player_id BIGINT NOT NULL COMMENT 'Acting player ID',
+  move_number INT NOT NULL COMMENT 'Sequential move number',
+  move_type VARCHAR(32) NOT NULL COMMENT 'PLACE_STONE,UNDO,SURRENDER,SYSTEM_END',
+  row_index TINYINT COMMENT 'Board row 0-14',
+  col_index TINYINT COMMENT 'Board column 0-14',
+  color TINYINT COMMENT '1=black,2=white',
+  move_data JSON COMMENT 'Move detail JSON',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Created time',
+  FOREIGN KEY (game_id) REFERENCES gobang_games(id) ON DELETE CASCADE,
+  FOREIGN KEY (player_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY uk_gobang_move_number (game_id, move_number),
+  INDEX idx_gobang_moves_game_id (game_id),
+  INDEX idx_gobang_moves_player_id (player_id),
+  INDEX idx_gobang_moves_created_at (created_at)
+) COMMENT='Gobang move and event log';
+
+CREATE TABLE gobang_undo_requests (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT 'Gobang undo request ID',
+  game_id BIGINT NOT NULL COMMENT 'Gobang game ID',
+  requester_id BIGINT NOT NULL COMMENT 'Requester user ID',
+  responder_id BIGINT NOT NULL COMMENT 'Responder user ID',
+  target_move_number INT NOT NULL COMMENT 'Move number targeted by undo',
+  status TINYINT NOT NULL DEFAULT 1 COMMENT '1=pending,2=accepted,3=rejected,4=expired',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Created time',
+  responded_at DATETIME COMMENT 'Responded time',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated time',
+  FOREIGN KEY (game_id) REFERENCES gobang_games(id) ON DELETE CASCADE,
+  FOREIGN KEY (requester_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (responder_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_gobang_undo_game_id (game_id),
+  INDEX idx_gobang_undo_requester (requester_id),
+  INDEX idx_gobang_undo_responder (responder_id),
+  INDEX idx_gobang_undo_status (status),
+  INDEX idx_gobang_undo_game_status (game_id, status)
+) COMMENT='Gobang undo requests';
+
+CREATE TABLE gobang_ai_reviews (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT 'Gobang AI review ID',
+  game_id BIGINT NOT NULL COMMENT 'Gobang game ID',
+  source VARCHAR(32) NOT NULL COMMENT 'mimo or heuristic',
+  review_data JSON NOT NULL COMMENT 'Serialized AI review response',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Created time',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated time',
+  FOREIGN KEY (game_id) REFERENCES gobang_games(id) ON DELETE CASCADE,
+  UNIQUE KEY uk_gobang_ai_review_game (game_id),
+  INDEX idx_gobang_ai_review_created_at (created_at)
+) COMMENT='Gobang saved AI reviews';
+
 -- 用户游戏统计表
 CREATE TABLE user_game_stats (
   id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '统计ID',
