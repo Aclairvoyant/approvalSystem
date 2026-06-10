@@ -1,0 +1,12 @@
+{
+  "id": "approval-voice-reply",
+  "title": "审批同意或拒绝时支持发送语音回复并触发邮件通知",
+  "status": "completed",
+  "complexity": "L",
+  "risk": "medium",
+  "domain": "fullstack",
+  "currentPhase": "completed",
+  "nextAction": "Archive task",
+  "createdAt": "2026-06-10T12:15:22+08:00",
+  "branch": "codex/voice-message-approval"
+}
