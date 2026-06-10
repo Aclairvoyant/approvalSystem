@@ -25,6 +25,8 @@ export interface Application {
   description: string
   appType?: number
   voiceTranscript?: string
+  voiceStatus?: number
+  voiceUploadError?: string
   remark?: string
   status: number
   rejectReason?: string
@@ -223,6 +225,14 @@ export const applicationAPI = {
   createApplication(data: ApplicationCreateRequest) {
     return http.post<Application>('/applications', data)
   },
+  createVoiceApplicationDraft(approverId: number) {
+    return http.post<Application>('/applications/voice', { approverId })
+  },
+  uploadVoiceApplicationAudio(id: number, audio: Blob) {
+    const formData = new FormData()
+    formData.append('file', audio, 'voice.wav')
+    return http.post<void>(`/applications/${id}/voice-audio`, formData)
+  },
   createVoiceApplication(approverId: number, audio: Blob) {
     const formData = new FormData()
     formData.append('approverId', String(approverId))
@@ -260,10 +270,26 @@ export const applicationAPI = {
   getApplicationDetail(id: number) {
     return http.get<Application>(`/applications/${id}`)
   },
-  approveApplication(id: number, data: ApplicationApprovalRequest) {
+  approveApplication(id: number, data: ApplicationApprovalRequest, voiceReply?: Blob) {
+    if (voiceReply) {
+      const formData = new FormData()
+      if (data.approvalDetail) {
+        formData.append('approvalDetail', data.approvalDetail)
+      }
+      formData.append('file', voiceReply, 'reply.wav')
+      return http.post<void>(`/applications/${id}/approve`, formData)
+    }
     return http.post<void>(`/applications/${id}/approve`, data)
   },
-  rejectApplication(id: number, data: ApplicationApprovalRequest) {
+  rejectApplication(id: number, data: ApplicationApprovalRequest, voiceReply?: Blob) {
+    if (voiceReply) {
+      const formData = new FormData()
+      if (data.approvalDetail) {
+        formData.append('approvalDetail', data.approvalDetail)
+      }
+      formData.append('file', voiceReply, 'reply.wav')
+      return http.post<void>(`/applications/${id}/reject`, formData)
+    }
     return http.post<void>(`/applications/${id}/reject`, data)
   },
 }

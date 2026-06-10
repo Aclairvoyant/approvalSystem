@@ -13,6 +13,8 @@ public interface IApprovalAttachmentService extends IService<ApprovalAttachment>
      */
     ApprovalAttachment uploadApprovalAttachment(Long applicationId, Long operatorId, MultipartFile file);
 
+    ApprovalAttachment uploadApprovalAttachment(Long applicationId, Long operatorId, Long operationLogId, MultipartFile file);
+
     /**
      * 获取申请的审批附件列表
      */

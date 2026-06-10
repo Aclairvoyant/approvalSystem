@@ -13,6 +13,8 @@ public interface IApplicationAttachmentService extends IService<ApplicationAttac
      */
     ApplicationAttachment uploadApplicationAttachment(Long applicationId, MultipartFile file);
 
+    ApplicationAttachment uploadApplicationAttachment(Long applicationId, byte[] data, String fileName, String fileType, long fileSize);
+
     /**
      * 获取申请的附件列表
      */

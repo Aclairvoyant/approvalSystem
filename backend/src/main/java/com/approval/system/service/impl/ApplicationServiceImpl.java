@@ -12,6 +12,7 @@ import com.approval.system.mapper.OperationLogMapper;
 import com.approval.system.mapper.UserMapper;
 import com.approval.system.service.IApplicationAttachmentService;
 import com.approval.system.service.IApplicationService;
+import com.approval.system.service.IApprovalAttachmentService;
 import com.approval.system.service.IEmailService;
 import com.approval.system.service.INotificationService;
 import com.approval.system.service.IVoiceApplicationService;
@@ -22,6 +23,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -37,6 +39,10 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
 
     private static final int APP_TYPE_NORMAL = 1;
     private static final int APP_TYPE_VOICE = 2;
+    private static final int VOICE_STATUS_NONE = 0;
+    private static final int VOICE_STATUS_UPLOADING = 1;
+    private static final int VOICE_STATUS_READY = 2;
+    private static final int VOICE_STATUS_FAILED = 3;
     private static final String VOICE_APPLICATION_TITLE = "语音申请";
     private static final String VOICE_APPLICATION_DESCRIPTION = "语音申请，请播放语音内容";
 
@@ -59,6 +65,9 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
     private IApplicationAttachmentService applicationAttachmentService;
 
     @Autowired
+    private IApprovalAttachmentService approvalAttachmentService;
+
+    @Autowired
     private IVoiceApplicationService voiceApplicationService;
 
     @Autowired
@@ -74,6 +83,7 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
                 .applicantId(applicantId)
                 .approverId(approverId)
                 .appType(APP_TYPE_NORMAL)
+                .voiceStatus(VOICE_STATUS_NONE)
                 .title(title)
                 .description(description)
                 .remark(remark)
@@ -217,6 +227,103 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
         applicationAttachmentService.uploadApplicationAttachment(application.getId(), audio);
 
         return application;
+    }
+
+    @Override
+    @Transactional
+    public Application createVoiceApplicationDraft(Long applicantId, Long approverId) {
+        Application application = Application.builder()
+                .applicantId(applicantId)
+                .approverId(approverId)
+                .appType(APP_TYPE_VOICE)
+                .title(VOICE_APPLICATION_TITLE)
+                .description(VOICE_APPLICATION_DESCRIPTION)
+                .voiceStatus(VOICE_STATUS_UPLOADING)
+                .status(ApplicationStatusEnum.DRAFT.getCode())
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+
+        this.save(application);
+
+        recordOperationLog(application.getId(), applicantId, OperationTypeEnum.CREATE.getCode(),
+                null, ApplicationStatusEnum.DRAFT.getCode(), "创建语音草稿");
+
+        return application;
+    }
+
+    @Override
+    @Async
+    public void processVoiceApplicationAudioAsync(Long applicationId, Long applicantId, byte[] audioBytes,
+                                                  String fileName, String contentType, long fileSize) {
+        Application application = this.getById(applicationId);
+        if (application == null) {
+            log.warn("申请为空, applicationId: {}", applicationId);
+            return;
+        }
+        if (!application.getApplicantId().equals(applicantId)) {
+            log.warn("申请人不匹配, applicationId: {}, applicantId: {}", applicationId, applicantId);
+            return;
+        }
+
+        if (!isVoiceUploadOpen(application, applicantId)) {
+            log.warn("跳过语音上传，因为应用程序已不再开放上传, applicationId: {}", applicationId);
+            return;
+        }
+
+        try {
+            applicationAttachmentService.uploadApplicationAttachment(applicationId, audioBytes, fileName, contentType, fileSize);
+            Application latest = this.getById(applicationId);
+            if (!isVoiceUploadOpen(latest, applicantId)) {
+                log.warn("跳过语音上传成功更新，因为应用状态已更改, applicationId: {}", applicationId);
+                return;
+            }
+            latest.setStatus(ApplicationStatusEnum.PENDING.getCode());
+            latest.setVoiceStatus(VOICE_STATUS_READY);
+            latest.setVoiceUploadError(null);
+            latest.setUpdatedAt(LocalDateTime.now());
+            this.updateById(latest);
+            sendVoiceApplicationReadyNotification(latest);
+        } catch (Exception e) {
+            Application latest = this.getById(applicationId);
+            if (isVoiceUploadOpen(latest, applicantId)) {
+                latest.setStatus(ApplicationStatusEnum.DRAFT.getCode());
+                latest.setVoiceStatus(VOICE_STATUS_FAILED);
+                latest.setVoiceUploadError(limitErrorMessage(e.getMessage()));
+                latest.setUpdatedAt(LocalDateTime.now());
+                this.updateById(latest);
+            }
+            log.error("处理语音应用音频失败, applicationId: {}", applicationId, e);
+        }
+    }
+
+    @Override
+    @Transactional
+    public void validateVoiceApplicationAudioUpload(Long applicationId, Long applicantId, MultipartFile audio) {
+        validateVoiceAudio(audio);
+
+        Application application = requireApplication(applicationId);
+        if (!application.getApplicantId().equals(applicantId)) {
+            throw new RuntimeException("没有权限上传音频");
+        }
+        if (!Integer.valueOf(APP_TYPE_VOICE).equals(application.getAppType())) {
+            throw new RuntimeException("只有语音应用可以上传语音音频");
+        }
+        if (!ApplicationStatusEnum.DRAFT.getCode().equals(application.getStatus())) {
+            throw new RuntimeException("只有草稿语音应用可以上传音频");
+        }
+
+        Integer voiceStatus = application.getVoiceStatus();
+        if (voiceStatus != null
+                && !Integer.valueOf(VOICE_STATUS_UPLOADING).equals(voiceStatus)
+                && !Integer.valueOf(VOICE_STATUS_FAILED).equals(voiceStatus)) {
+            throw new RuntimeException("语音应用音频无法上传");
+        }
+
+        application.setVoiceStatus(VOICE_STATUS_UPLOADING);
+        application.setVoiceUploadError(null);
+        application.setUpdatedAt(LocalDateTime.now());
+        this.updateById(application);
     }
 
     @Override
@@ -409,6 +516,12 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
     @Override
     @Transactional
     public void approveApplication(Long applicationId, Long approverId, String approvalDetail) {
+        approveApplication(applicationId, approverId, approvalDetail, null);
+    }
+
+    @Override
+    @Transactional
+    public void approveApplication(Long applicationId, Long approverId, String approvalDetail, MultipartFile voiceReply) {
         Application application = this.getById(applicationId);
         if (application == null) {
             throw new RuntimeException("申请单不存在");
@@ -416,6 +529,10 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
 
         if (!application.getApproverId().equals(approverId)) {
             throw new RuntimeException("没有权限审批此申请");
+        }
+        assertPending(application);
+        if (voiceReply != null) {
+            validateVoiceAudio(voiceReply);
         }
 
         Integer oldStatus = application.getStatus();
@@ -426,8 +543,11 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
         this.updateById(application);
 
         // 记录操作日志
-        recordOperationLog(applicationId, approverId, OperationTypeEnum.APPROVE.getCode(),
+        OperationLog operationLog = recordOperationLog(applicationId, approverId, OperationTypeEnum.APPROVE.getCode(),
                 oldStatus, ApplicationStatusEnum.APPROVED.getCode(), approvalDetail);
+        if (voiceReply != null) {
+            approvalAttachmentService.uploadApprovalAttachment(applicationId, approverId, operationLog.getId(), voiceReply);
+        }
 
         // 发送邮件通知申请人
         try {
@@ -479,6 +599,12 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
     @Override
     @Transactional
     public void rejectApplication(Long applicationId, Long approverId, String rejectReason) {
+        rejectApplication(applicationId, approverId, rejectReason, null);
+    }
+
+    @Override
+    @Transactional
+    public void rejectApplication(Long applicationId, Long approverId, String rejectReason, MultipartFile voiceReply) {
         Application application = this.getById(applicationId);
         if (application == null) {
             throw new RuntimeException("申请单不存在");
@@ -486,6 +612,10 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
 
         if (!application.getApproverId().equals(approverId)) {
             throw new RuntimeException("没有权限审批此申请");
+        }
+        assertPending(application);
+        if (voiceReply != null) {
+            validateVoiceAudio(voiceReply);
         }
 
         Integer oldStatus = application.getStatus();
@@ -497,8 +627,11 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
         this.updateById(application);
 
         // 记录操作日志
-        recordOperationLog(applicationId, approverId, OperationTypeEnum.REJECT.getCode(),
+        OperationLog operationLog = recordOperationLog(applicationId, approverId, OperationTypeEnum.REJECT.getCode(),
                 oldStatus, ApplicationStatusEnum.REJECTED.getCode(), rejectReason);
+        if (voiceReply != null) {
+            approvalAttachmentService.uploadApprovalAttachment(applicationId, approverId, operationLog.getId(), voiceReply);
+        }
 
         // 发送邮件通知申请人
         try {
@@ -611,6 +744,62 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
         }
     }
 
+    private void assertPending(Application application) {
+        if (!ApplicationStatusEnum.PENDING.getCode().equals(application.getStatus())) {
+            throw new RuntimeException("只有待处理的申请才能被批准或拒绝");
+        }
+    }
+
+    private boolean isVoiceUploadOpen(Application application, Long applicantId) {
+        return application != null
+                && application.getApplicantId().equals(applicantId)
+                && ApplicationStatusEnum.DRAFT.getCode().equals(application.getStatus())
+                && Integer.valueOf(VOICE_STATUS_UPLOADING).equals(application.getVoiceStatus());
+    }
+
+    private void sendVoiceApplicationReadyNotification(Application application) {
+        try {
+            User applicant = userMapper.selectById(application.getApplicantId());
+            User approver = userMapper.selectById(application.getApproverId());
+
+            if (approver == null || !StringUtils.hasText(approver.getEmail())) {
+                log.warn("审批人邮箱为空，无法发送语音应用准备就绪通知，审批人ID: {}", application.getApproverId());
+                return;
+            }
+
+            String applicantName = applicant != null && applicant.getRealName() != null
+                    ? applicant.getRealName()
+                    : (applicant != null ? applicant.getUsername() : "用户");
+
+            boolean emailSuccess = emailService.sendApplicationNotification(
+                    approver.getEmail(),
+                    applicantName,
+                    application.getTitle(),
+                    application.getId()
+            );
+
+            notificationService.createSentNotification(
+                    application.getId(),
+                    application.getApproverId(),
+                    2,
+                    "新的待审批申请",
+                    "您有来自 " + applicantName + " 的待审批申请: " + application.getTitle(),
+                    null,
+                    approver.getEmail(),
+                    emailSuccess
+            );
+        } catch (Exception e) {
+            log.error("发送语音应用准备就绪通知失败", e);
+        }
+    }
+
+    private String limitErrorMessage(String message) {
+        if (!StringUtils.hasText(message)) {
+            return "语音上传失败";
+        }
+        return message.length() > 500 ? message.substring(0, 500) : message;
+    }
+
     private ApplicationAttachment findVoiceAttachment(Long applicationId) {
         QueryWrapper<ApplicationAttachment> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("application_id", applicationId);
@@ -675,8 +864,8 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
     /**
      * 记录操作日志
      */
-    private void recordOperationLog(Long applicationId, Long operatorId, Integer operationType,
-                                    Integer oldStatus, Integer newStatus, String operationDetail) {
+    private OperationLog recordOperationLog(Long applicationId, Long operatorId, Integer operationType,
+                                            Integer oldStatus, Integer newStatus, String operationDetail) {
         OperationLog log = OperationLog.builder()
                 .applicationId(applicationId)
                 .operatorId(operatorId)
@@ -688,5 +877,6 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
                 .build();
 
         operationLogMapper.insert(log);
+        return log;
     }
 }

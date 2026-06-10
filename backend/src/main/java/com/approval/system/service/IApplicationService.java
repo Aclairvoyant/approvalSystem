@@ -17,6 +17,13 @@ public interface IApplicationService extends IService<Application> {
      */
     Application createVoiceApplication(Long applicantId, Long approverId, MultipartFile audio);
 
+    Application createVoiceApplicationDraft(Long applicantId, Long approverId);
+
+    void processVoiceApplicationAudioAsync(Long applicationId, Long applicantId, byte[] audioBytes,
+                                           String fileName, String contentType, long fileSize);
+
+    void validateVoiceApplicationAudioUpload(Long applicationId, Long applicantId, MultipartFile audio);
+
     /**
      * 转写语音申请，已转写时直接返回缓存
      */
@@ -57,10 +64,14 @@ public interface IApplicationService extends IService<Application> {
      */
     void approveApplication(Long applicationId, Long approverId, String approvalDetail);
 
+    void approveApplication(Long applicationId, Long approverId, String approvalDetail, MultipartFile voiceReply);
+
     /**
      * 驳回申请
      */
     void rejectApplication(Long applicationId, Long approverId, String rejectReason);
+
+    void rejectApplication(Long applicationId, Long approverId, String rejectReason, MultipartFile voiceReply);
 
     /**
      * 获取申请人的申请列表

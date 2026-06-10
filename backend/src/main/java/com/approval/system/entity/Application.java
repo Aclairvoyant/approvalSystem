@@ -42,6 +42,12 @@ public class Application {
     @TableField("voice_transcript")
     private String voiceTranscript;
 
+    @TableField("voice_status")
+    private Integer voiceStatus;
+
+    @TableField("voice_upload_error")
+    private String voiceUploadError;
+
     @TableField("status")
     private Integer status;
 

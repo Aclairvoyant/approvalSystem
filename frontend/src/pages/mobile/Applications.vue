@@ -46,6 +46,14 @@
                 <van-tag :type="getStatusType(app.status)" size="medium">
                   {{ getStatusText(app.status) }}
                 </van-tag>
+                <van-tag
+                  v-if="shouldShowVoiceUploadStatus(app)"
+                  :type="getVoiceUploadStatusType(app.voiceStatus)"
+                  size="medium"
+                  plain
+                >
+                  {{ getVoiceUploadStatusText(app.voiceStatus) }}
+                </van-tag>
               </div>
               <div class="card-content">{{ app.description }}</div>
               <div class="card-footer">
@@ -75,6 +83,14 @@
                 text="取消"
                 class="swipe-btn"
                 @click.stop="handleCancel(app)"
+              />
+              <van-button
+                v-if="app.appType === 2 && app.voiceStatus === 3"
+                square
+                type="primary"
+                text="Retry"
+                class="swipe-btn"
+                @click.stop="retryVoiceUpload(app)"
               />
               <van-button
                 square
@@ -512,6 +528,7 @@ const voiceRequestBlob = ref<Blob | null>(null)
 const voiceRequestAudioUrl = ref('')
 const voiceUploadFileList = ref<any[]>([])
 const voiceUploadConverting = ref(false)
+const voiceRetryBlobs = ref<Map<number, Blob>>(new Map())
 const recordSeconds = ref(0)
 let recorderHandle: RecorderHandle | null = null
 let recordTimer: ReturnType<typeof setInterval> | null = null
@@ -787,6 +804,28 @@ const getStatusText = (status: number): string => {
 }
 
 // 格式化日期
+const shouldShowVoiceUploadStatus = (app: Application): boolean => {
+  return app.appType === 2 && app.status === 4 && !!app.voiceStatus
+}
+
+const getVoiceUploadStatusType = (voiceStatus?: number): any => {
+  const types: Record<number, string> = {
+    1: 'warning',
+    2: 'success',
+    3: 'danger'
+  }
+  return voiceStatus ? types[voiceStatus] : 'default'
+}
+
+const getVoiceUploadStatusText = (voiceStatus?: number): string => {
+  const texts: Record<number, string> = {
+    1: '上传中',
+    2: '就绪',
+    3: '失败'
+  }
+  return voiceStatus ? texts[voiceStatus] : ''
+}
+
 const formatDate = (date: string): string => {
   if (!date) return ''
   const d = new Date(date)
@@ -881,6 +920,49 @@ const onApproverConfirm = ({ selectedOptions }: any): void => {
 }
 
 // 提交申请
+const uploadVoiceAudioInBackground = async (applicationId: number, audio: Blob): Promise<void> => {
+  voiceRetryBlobs.value.set(applicationId, audio)
+  try {
+    await applicationAPI.uploadVoiceApplicationAudio(applicationId, audio)
+    voiceRetryBlobs.value.delete(applicationId)
+    showSuccessToast('Voice uploaded')
+  } catch (error: any) {
+    showToast(error.message || 'Voice upload failed')
+  } finally {
+    await onRefresh()
+  }
+}
+
+const retryVoiceUpload = (app: Application): void => {
+  const cachedAudio = voiceRetryBlobs.value.get(app.id)
+  if (cachedAudio) {
+    void uploadVoiceAudioInBackground(app.id, cachedAudio)
+    return
+  }
+
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'audio/*,.wav,.mp3,.m4a,.aac,.webm,.ogg'
+  input.onchange = async () => {
+    const file = input.files?.[0]
+    if (!file) return
+    if (!isAudioFile(file)) {
+      showToast('Please select an audio file')
+      return
+    }
+    try {
+      showLoadingToast({ message: 'Processing...', forbidClick: true })
+      const wavBlob = await normalizeAudioBlobToWav(file)
+      closeToast()
+      void uploadVoiceAudioInBackground(app.id, wavBlob)
+    } catch (error: any) {
+      closeToast()
+      showToast(error.message || 'Audio processing failed')
+    }
+  }
+  input.click()
+}
+
 const submitApplication = async (): Promise<void> => {
   if (!newApplication.value.approverId) {
     showToast('请选择审批人')
@@ -897,11 +979,13 @@ const submitApplication = async (): Promise<void> => {
 
   try {
     if (createMode.value === 'voice') {
-      await applicationAPI.createVoiceApplication(newApplication.value.approverId, voiceRequestBlob.value!)
+      const audio = voiceRequestBlob.value!
+      const draft = await applicationAPI.createVoiceApplicationDraft(newApplication.value.approverId)
       closeToast()
       showSuccessToast('语音申请创建成功')
       resetCreateForm()
-      onRefresh()
+      await onRefresh()
+      void uploadVoiceAudioInBackground(draft.id, audio)
       return
     }
 

@@ -3,6 +3,7 @@ package com.approval.system.controller;
 import com.approval.system.common.response.ApiResponse;
 import com.approval.system.dto.ApplicationCreateRequest;
 import com.approval.system.dto.ApplicationApprovalRequest;
+import com.approval.system.dto.VoiceApplicationCreateRequest;
 import com.approval.system.dto.VoiceParseResult;
 import com.approval.system.entity.Application;
 import com.approval.system.service.IApplicationService;
@@ -12,6 +13,7 @@ import com.approval.system.service.IVoiceApplicationService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -53,6 +55,23 @@ public class ApplicationController {
     /**
      * 创建语音消息式申请单。申请人只提交一段语音，标题由后端生成。
      */
+    @PostMapping(value = "/voice", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ApiResponse<Application> createVoiceApplicationDraft(@RequestBody VoiceApplicationCreateRequest request) {
+        try {
+            Long userId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+            if (!userRelationService.isRelated(userId, request.getApproverId())) {
+                return ApiResponse.fail(400, "只有互为对象的用户才能创建申请");
+            }
+
+            Application application = applicationService.createVoiceApplicationDraft(userId, request.getApproverId());
+            return ApiResponse.success("语音应用草稿已创建", application);
+        } catch (Exception e) {
+            log.error("创建语音应用草稿失败", e);
+            return ApiResponse.fail(400, e.getMessage());
+        }
+    }
+
     @PostMapping(value = "/voice", consumes = "multipart/form-data")
     public ApiResponse<Application> createVoiceApplication(
             @RequestParam("approverId") Long approverId,
@@ -64,7 +83,16 @@ public class ApplicationController {
                 return ApiResponse.fail(400, "只有互为对象的用户才能创建申请");
             }
 
-            Application application = applicationService.createVoiceApplication(userId, approverId, file);
+            Application application = applicationService.createVoiceApplicationDraft(userId, approverId);
+            applicationService.validateVoiceApplicationAudioUpload(application.getId(), userId, file);
+            applicationService.processVoiceApplicationAudioAsync(
+                    application.getId(),
+                    userId,
+                    file.getBytes(),
+                    file.getOriginalFilename(),
+                    file.getContentType(),
+                    file.getSize()
+            );
             return ApiResponse.success("语音申请创建成功", application);
         } catch (Exception e) {
             log.error("创建语音申请失败", e);
@@ -75,6 +103,28 @@ public class ApplicationController {
     /**
      * 创建申请单
      */
+    @PostMapping(value = "/{id}/voice-audio", consumes = "multipart/form-data")
+    public ApiResponse<Void> uploadVoiceApplicationAudio(
+            @PathVariable Long id,
+            @RequestParam("file") MultipartFile file) {
+        try {
+            Long userId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            applicationService.validateVoiceApplicationAudioUpload(id, userId, file);
+            applicationService.processVoiceApplicationAudioAsync(
+                    id,
+                    userId,
+                    file.getBytes(),
+                    file.getOriginalFilename(),
+                    file.getContentType(),
+                    file.getSize()
+            );
+            return ApiResponse.success("语音申请音频上传成功，正在处理中");
+        } catch (Exception e) {
+            log.error("语音申请音频上传失败", e);
+            return ApiResponse.fail(400, e.getMessage());
+        }
+    }
+
     @PostMapping
     public ApiResponse<Application> createApplication(@RequestBody ApplicationCreateRequest request) {
         try {
@@ -136,6 +186,20 @@ public class ApplicationController {
     /**
      * 审批通过
      */
+    @PostMapping(value = "/{id}/approve", consumes = "multipart/form-data")
+    public ApiResponse<Void> approveApplication(@PathVariable Long id,
+                                                @RequestParam(value = "approvalDetail", required = false) String approvalDetail,
+                                                @RequestParam(value = "file", required = false) MultipartFile file) {
+        try {
+            Long userId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            applicationService.approveApplication(id, userId, approvalDetail, file);
+            return ApiResponse.success("审批通过");
+        } catch (Exception e) {
+            log.error("审批失败", e);
+            return ApiResponse.fail(400, e.getMessage());
+        }
+    }
+
     @PostMapping("/{id}/approve")
     public ApiResponse<Void> approveApplication(@PathVariable Long id,
                                                 @RequestBody ApplicationApprovalRequest request) {
@@ -152,6 +216,20 @@ public class ApplicationController {
     /**
      * 驳回申请
      */
+    @PostMapping(value = "/{id}/reject", consumes = "multipart/form-data")
+    public ApiResponse<Void> rejectApplication(@PathVariable Long id,
+                                               @RequestParam(value = "approvalDetail", required = false) String approvalDetail,
+                                               @RequestParam(value = "file", required = false) MultipartFile file) {
+        try {
+            Long userId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            applicationService.rejectApplication(id, userId, approvalDetail, file);
+            return ApiResponse.success("申请已驳回");
+        } catch (Exception e) {
+            log.error("驳回失败", e);
+            return ApiResponse.fail(400, e.getMessage());
+        }
+    }
+
     @PostMapping("/{id}/reject")
     public ApiResponse<Void> rejectApplication(@PathVariable Long id,
                                                @RequestBody ApplicationApprovalRequest request) {

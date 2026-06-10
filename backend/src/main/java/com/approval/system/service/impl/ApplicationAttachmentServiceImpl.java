@@ -46,6 +46,28 @@ public class ApplicationAttachmentServiceImpl extends ServiceImpl<ApplicationAtt
     }
 
     @Override
+    public ApplicationAttachment uploadApplicationAttachment(Long applicationId, byte[] data, String fileName, String fileType, long fileSize) {
+        try {
+            String fileUrl = ossUtils.uploadBytes(data, fileName, fileType);
+
+            ApplicationAttachment attachment = ApplicationAttachment.builder()
+                    .applicationId(applicationId)
+                    .fileName(fileName)
+                    .fileUrl(fileUrl)
+                    .fileType(fileType)
+                    .fileSize(fileSize)
+                    .createdAt(LocalDateTime.now())
+                    .build();
+
+            this.save(attachment);
+            return attachment;
+        } catch (Exception e) {
+            log.error("上传申请语音附件失败，applicationId: {}", applicationId, e);
+            throw new RuntimeException("上传附件失败: " + e.getMessage());
+        }
+    }
+
+    @Override
     public List<ApplicationAttachment> getApplicationAttachments(Long applicationId) {
         QueryWrapper<ApplicationAttachment> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("application_id", applicationId);

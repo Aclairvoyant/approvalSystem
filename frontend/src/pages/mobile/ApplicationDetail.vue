@@ -102,10 +102,26 @@
       </van-cell-group>
 
       <!-- 审批附件 -->
-      <van-cell-group v-if="approvalImages.length > 0 || approvalFiles.length > 0" inset class="info-group">
+      <van-cell-group v-if="approvalImages.length > 0 || approvalFiles.length > 0 || approvalAudioAttachments.length > 0" inset class="info-group">
         <van-cell title="审批附件" />
         <div class="attachment-section">
           <!-- 图片预览 -->
+          <div
+            v-for="att in approvalAudioAttachments"
+            :key="att.attachmentId || att.fileUrl"
+            class="voice-audio-item"
+          >
+            <div class="voice-audio-title">
+              <van-icon name="volume-o" />
+              <span>{{ att.fileName || '语音回复' }}</span>
+            </div>
+            <audio
+              class="voice-audio-player"
+              :src="att.fileUrl"
+              controls
+              preload="none"
+            ></audio>
+          </div>
           <div v-if="approvalImages.length > 0" class="image-preview">
             <van-image
               v-for="(img, index) in approvalImages"
@@ -168,6 +184,64 @@
                 accept="image/*,.pdf,.doc,.docx"
                 @oversize="onOversize"
               />
+            </template>
+          </van-field>
+          <van-field name="voiceReply" label="语音回复">
+            <template #input>
+              <div class="approval-voice-reply">
+                <div class="approval-voice-actions">
+                  <van-button
+                    size="small"
+                    round
+                    plain
+                    type="primary"
+                    :icon="approvalVoiceRecording ? 'stop-circle-o' : 'volume-o'"
+                    :loading="approvalVoiceProcessing"
+                    :disabled="approvalVoiceProcessing || !recordingAvailable"
+                    @click="toggleApprovalVoiceRecording"
+                  >
+                    {{ approvalVoiceRecording ? formatDuration(approvalVoiceSeconds) : '录制' }}
+                  </van-button>
+                  <van-uploader
+                    v-model="approvalVoiceFileList"
+                    :max-count="1"
+                    :max-size="10 * 1024 * 1024"
+                    accept="audio/*,.wav,.mp3,.m4a,.aac,.webm,.ogg"
+                    :after-read="handleApprovalVoiceFileRead"
+                    @oversize="onOversize"
+                  >
+                    <van-button
+                      size="small"
+                      round
+                      plain
+                      icon="plus"
+                      :loading="approvalVoiceProcessing"
+                    >
+                      上传
+                    </van-button>
+                  </van-uploader>
+                  <van-button
+                    v-if="approvalVoiceBlob"
+                    size="small"
+                    round
+                    plain
+                    icon="delete-o"
+                    @click="clearApprovalVoiceReply"
+                  >
+                    清空
+                  </van-button>
+                </div>
+                <div v-if="!recordingAvailable" class="voice-reply-tip">
+                  {{ recordingSupport.message }}
+                </div>
+                <audio
+                  v-if="approvalVoiceAudioUrl"
+                  class="voice-audio-player"
+                  :src="approvalVoiceAudioUrl"
+                  controls
+                  preload="none"
+                ></audio>
+              </div>
             </template>
           </van-field>
           <div class="action-buttons">
@@ -379,11 +453,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast, showSuccessToast, showLoadingToast, closeToast, showImagePreview, showConfirmDialog } from 'vant'
 import { useUserStore } from '@/store/modules/user'
 import { applicationAPI, logAPI, attachmentAPI, commentAPI, type Application, type ApplicationComment } from '@/services/api'
+import {
+  startRecording,
+  getRecordingSupportStatus,
+  normalizeAudioBlobToWav,
+  type RecorderHandle,
+} from '@/utils/wavRecorder'
 
 const route = useRoute()
 const router = useRouter()
@@ -402,6 +482,14 @@ const rejecting = ref(false)
 const sendingVoiceNotification = ref(false)
 const voiceTranscript = ref('')
 const transcribingVoice = ref(false)
+const approvalVoiceBlob = ref<Blob | null>(null)
+const approvalVoiceAudioUrl = ref('')
+const approvalVoiceFileList = ref<any[]>([])
+const approvalVoiceRecording = ref(false)
+const approvalVoiceProcessing = ref(false)
+const approvalVoiceSeconds = ref(0)
+let approvalVoiceRecorder: RecorderHandle | null = null
+let approvalVoiceTimer: ReturnType<typeof setInterval> | null = null
 
 // 评论相关
 const comments = ref<(ApplicationComment & { showPopover?: boolean })[]>([])
@@ -451,6 +539,15 @@ const commentActions = [
 ]
 
 // 判断是否是图片
+const formatDuration = (sec: number): string => {
+  const m = Math.floor(sec / 60).toString().padStart(2, '0')
+  const s = (sec % 60).toString().padStart(2, '0')
+  return `${m}:${s}`
+}
+
+const recordingSupport = computed(() => getRecordingSupportStatus())
+const recordingAvailable = computed(() => recordingSupport.value.supported)
+
 const isImage = (fileType?: string): boolean => {
   return !!fileType && fileType.startsWith('image/')
 }
@@ -468,6 +565,9 @@ const applicationImages = computed(() =>
 )
 const applicationFiles = computed(() =>
   applicationAttachments.value.filter(a => !isImage(a.fileType) && !isAudio(a.fileType))
+)
+const approvalAudioAttachments = computed(() =>
+  approvalAttachments.value.filter(a => isAudio(a.fileType))
 )
 const approvalImages = computed(() =>
   approvalAttachments.value.filter(a => isImage(a.fileType))
@@ -491,6 +591,15 @@ const canSendVoiceNotification = computed(() => {
 
 onMounted(async () => {
   await fetchAll()
+})
+
+onUnmounted(() => {
+  clearApprovalVoiceTimer()
+  if (approvalVoiceRecorder) {
+    approvalVoiceRecorder.cancel()
+    approvalVoiceRecorder = null
+  }
+  clearApprovalVoiceReply()
 })
 
 const fetchAll = async (): Promise<void> => {
@@ -553,6 +662,114 @@ const onOversize = (): void => {
 }
 
 // 上传审批附件
+const isLocalAudioFile = (file: File): boolean => {
+  return file.type.startsWith('audio/') || /\.(wav|mp3|m4a|aac|mp4|webm|ogg)$/i.test(file.name)
+}
+
+const clearApprovalVoiceTimer = (): void => {
+  if (approvalVoiceTimer) {
+    clearInterval(approvalVoiceTimer)
+    approvalVoiceTimer = null
+  }
+}
+
+const clearApprovalVoiceReply = (clearUpload = true): void => {
+  if (approvalVoiceAudioUrl.value) {
+    URL.revokeObjectURL(approvalVoiceAudioUrl.value)
+  }
+  approvalVoiceAudioUrl.value = ''
+  approvalVoiceBlob.value = null
+  if (clearUpload) {
+    approvalVoiceFileList.value = []
+  }
+}
+
+const setApprovalVoiceReply = (audioBlob: Blob, clearUpload = true): void => {
+  clearApprovalVoiceReply(clearUpload)
+  approvalVoiceBlob.value = audioBlob
+  approvalVoiceAudioUrl.value = URL.createObjectURL(audioBlob)
+}
+
+const stopApprovalVoiceRecording = async (): Promise<void> => {
+  if (!approvalVoiceRecorder || !approvalVoiceRecording.value) return
+  clearApprovalVoiceTimer()
+  approvalVoiceRecording.value = false
+  approvalVoiceProcessing.value = true
+  try {
+    const audioBlob = await approvalVoiceRecorder.stop()
+    approvalVoiceRecorder = null
+    if (!audioBlob || audioBlob.size <= 44) {
+      showToast('录音时间太短，请重新录制')
+      return
+    }
+    setApprovalVoiceReply(audioBlob)
+    showSuccessToast('语音回复就绪')
+  } catch (error: any) {
+    approvalVoiceRecorder = null
+    showToast(error.message || 'Voice recording failed')
+  } finally {
+    approvalVoiceProcessing.value = false
+  }
+}
+
+const startApprovalVoiceRecording = async (): Promise<void> => {
+  if (!getRecordingSupportStatus().supported) {
+    showToast(getRecordingSupportStatus().message)
+    return
+  }
+  approvalVoiceSeconds.value = 0
+  approvalVoiceProcessing.value = false
+  try {
+    approvalVoiceRecorder = await startRecording()
+    approvalVoiceRecording.value = true
+    approvalVoiceTimer = setInterval(() => {
+      approvalVoiceSeconds.value++
+      if (approvalVoiceSeconds.value >= 60) {
+        void stopApprovalVoiceRecording()
+      }
+    }, 1000)
+  } catch (error: any) {
+    approvalVoiceRecording.value = false
+    showToast(error.message || 'Unable to start recording')
+  }
+}
+
+const toggleApprovalVoiceRecording = async (): Promise<void> => {
+  if (approvalVoiceRecording.value) {
+    await stopApprovalVoiceRecording()
+    return
+  }
+  await startApprovalVoiceRecording()
+}
+
+const handleApprovalVoiceFileRead = async (fileItem: any): Promise<void> => {
+  const item = Array.isArray(fileItem) ? fileItem[0] : fileItem
+  const file = item?.file as File | undefined
+  if (!file) return
+  if (!isLocalAudioFile(file)) {
+    approvalVoiceFileList.value = []
+    showToast('请选择音频文件')
+    return
+  }
+
+  approvalVoiceProcessing.value = true
+  item.status = '上传中'
+  item.message = '处理中'
+  try {
+    const wavBlob = await normalizeAudioBlobToWav(file)
+    setApprovalVoiceReply(wavBlob, false)
+    item.status = '完成'
+    item.message = '就绪'
+    showSuccessToast('语音回复就绪')
+  } catch (error: any) {
+    item.status = '失败'
+    item.message = '失败'
+    showToast(error.message || 'Audio processing failed')
+  } finally {
+    approvalVoiceProcessing.value = false
+  }
+}
+
 const uploadApprovalFiles = async (): Promise<void> => {
   for (const fileItem of approvalFileList.value) {
     if (fileItem.file) {
@@ -572,10 +789,15 @@ const handleApprove = async (): Promise<void> => {
     if (approvalFileList.value.length > 0) {
       await uploadApprovalFiles()
     }
-    await applicationAPI.approveApplication(applicationId.value, { approvalDetail: approvalDetail.value })
+    await applicationAPI.approveApplication(
+      applicationId.value,
+      { approvalDetail: approvalDetail.value },
+      approvalVoiceBlob.value || undefined
+    )
     closeToast()
     showSuccessToast('审批通过')
     approvalFileList.value = []
+    clearApprovalVoiceReply()
     approvalDetail.value = ''
     await fetchAll()
   } catch (error: any) {
@@ -593,10 +815,15 @@ const handleReject = async (): Promise<void> => {
     if (approvalFileList.value.length > 0) {
       await uploadApprovalFiles()
     }
-    await applicationAPI.rejectApplication(applicationId.value, { approvalDetail: approvalDetail.value })
+    await applicationAPI.rejectApplication(
+      applicationId.value,
+      { approvalDetail: approvalDetail.value },
+      approvalVoiceBlob.value || undefined
+    )
     closeToast()
     showSuccessToast('已驳回')
     approvalFileList.value = []
+    clearApprovalVoiceReply()
     approvalDetail.value = ''
     await fetchAll()
   } catch (error: any) {
@@ -943,6 +1170,24 @@ const formatCommentTime = (date: string): string => {
 
 .approval-form {
   padding: 12px 16px;
+}
+
+.approval-voice-reply {
+  width: 100%;
+}
+
+.approval-voice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.voice-reply-tip {
+  color: #969799;
+  font-size: 12px;
+  line-height: 1.4;
+  margin-bottom: 8px;
 }
 
 .voice-notification-section {

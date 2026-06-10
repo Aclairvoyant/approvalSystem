@@ -49,6 +49,8 @@ CREATE TABLE applications (
   description LONGTEXT COMMENT '事项描述/理由',
   remark VARCHAR(500) COMMENT '备注',
   voice_transcript LONGTEXT COMMENT '语音申请ASR转写文本',
+  voice_status TINYINT NOT NULL DEFAULT 0 COMMENT '语音上传状态: 0=none,1=uploading,2=ready,3=failed',
+  voice_upload_error VARCHAR(500) COMMENT '语音上传失败信息',
   status TINYINT DEFAULT 1 COMMENT '申请状态：1=待审批，2=已批准，3=已驳回，4=草稿',
   reject_reason VARCHAR(500) COMMENT '驳回原因',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
