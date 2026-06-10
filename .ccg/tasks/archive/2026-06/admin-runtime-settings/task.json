@@ -1,0 +1,12 @@
+{
+  "id": "admin-runtime-settings",
+  "title": "Admin runtime settings for sender email and voice model",
+  "status": "completed",
+  "complexity": "M",
+  "risk": "medium",
+  "domain": "backend-frontend",
+  "currentPhase": "completed",
+  "nextAction": "Archive task",
+  "createdAt": "2026-06-10T06:27:10.5036413Z",
+  "branch": "codex/voice-message-approval"
+}
