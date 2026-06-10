@@ -51,6 +51,28 @@ public class ApplicationController {
     }
 
     /**
+     * 创建语音消息式申请单。申请人只提交一段语音，标题由后端生成。
+     */
+    @PostMapping(value = "/voice", consumes = "multipart/form-data")
+    public ApiResponse<Application> createVoiceApplication(
+            @RequestParam("approverId") Long approverId,
+            @RequestParam("file") MultipartFile file) {
+        try {
+            Long userId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+            if (!userRelationService.isRelated(userId, approverId)) {
+                return ApiResponse.fail(400, "只有互为对象的用户才能创建申请");
+            }
+
+            Application application = applicationService.createVoiceApplication(userId, approverId, file);
+            return ApiResponse.success("语音申请创建成功", application);
+        } catch (Exception e) {
+            log.error("创建语音申请失败", e);
+            return ApiResponse.fail(400, e.getMessage());
+        }
+    }
+
+    /**
      * 创建申请单
      */
     @PostMapping
@@ -90,6 +112,23 @@ public class ApplicationController {
             }
         } catch (Exception e) {
             log.error("发送语音通知失败", e);
+            return ApiResponse.fail(400, e.getMessage());
+        }
+    }
+
+    /**
+     * 语音申请转文字。已转写过时返回缓存文本。
+     */
+    @PostMapping("/{id}/transcribe-voice")
+    public ApiResponse<String> transcribeVoiceApplication(
+            @PathVariable Long id,
+            @RequestParam(value = "language", required = false, defaultValue = "zh") String language) {
+        try {
+            Long userId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            String transcript = applicationService.transcribeVoiceApplication(id, userId, language);
+            return ApiResponse.success("转写成功", transcript);
+        } catch (Exception e) {
+            log.error("语音申请转文字失败", e);
             return ApiResponse.fail(400, e.getMessage());
         }
     }
@@ -167,10 +206,12 @@ public class ApplicationController {
     @GetMapping("/{id}")
     public ApiResponse<Application> getApplicationDetail(@PathVariable Long id) {
         try {
+            Long userId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
             Application application = applicationService.getApplicationDetail(id);
             if (application == null) {
                 return ApiResponse.fail(404, "申请不存在");
             }
+            applicationService.assertApplicationParticipant(id, userId);
             return ApiResponse.success(application);
         } catch (Exception e) {
             log.error("获取申请详情失败", e);

@@ -5,6 +5,7 @@ import com.approval.system.dto.FileUploadResponse;
 import com.approval.system.entity.ApplicationAttachment;
 import com.approval.system.entity.ApprovalAttachment;
 import com.approval.system.service.IApplicationAttachmentService;
+import com.approval.system.service.IApplicationService;
 import com.approval.system.service.IApprovalAttachmentService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +27,9 @@ public class AttachmentController {
     @Autowired
     private IApprovalAttachmentService approvalAttachmentService;
 
+    @Autowired
+    private IApplicationService applicationService;
+
     /**
      * 上传申请附件
      */
@@ -34,6 +38,8 @@ public class AttachmentController {
             @PathVariable Long applicationId,
             @RequestParam("file") MultipartFile file) {
         try {
+            Long userId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            applicationService.assertApplicationApplicant(applicationId, userId);
             ApplicationAttachment attachment = applicationAttachmentService.uploadApplicationAttachment(applicationId, file);
 
             FileUploadResponse response = FileUploadResponse.builder()
@@ -60,6 +66,7 @@ public class AttachmentController {
             @RequestParam("file") MultipartFile file) {
         try {
             Long userId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            applicationService.assertApplicationApprover(applicationId, userId);
             ApprovalAttachment attachment = approvalAttachmentService.uploadApprovalAttachment(applicationId, userId, file);
 
             FileUploadResponse response = FileUploadResponse.builder()
@@ -83,6 +90,8 @@ public class AttachmentController {
     @GetMapping("/application/{applicationId}")
     public ApiResponse<List<FileUploadResponse>> getApplicationAttachments(@PathVariable Long applicationId) {
         try {
+            Long userId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            applicationService.assertApplicationParticipant(applicationId, userId);
             List<ApplicationAttachment> attachments = applicationAttachmentService.getApplicationAttachments(applicationId);
 
             List<FileUploadResponse> responses = attachments.stream()
@@ -108,6 +117,8 @@ public class AttachmentController {
     @GetMapping("/approval/{applicationId}")
     public ApiResponse<List<FileUploadResponse>> getApprovalAttachments(@PathVariable Long applicationId) {
         try {
+            Long userId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            applicationService.assertApplicationParticipant(applicationId, userId);
             List<ApprovalAttachment> attachments = approvalAttachmentService.getApprovalAttachments(applicationId);
 
             List<FileUploadResponse> responses = attachments.stream()
@@ -133,6 +144,11 @@ public class AttachmentController {
     @DeleteMapping("/application/{attachmentId}")
     public ApiResponse<Void> deleteApplicationAttachment(@PathVariable Long attachmentId) {
         try {
+            Long userId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            ApplicationAttachment attachment = applicationAttachmentService.getById(attachmentId);
+            if (attachment != null) {
+                applicationService.assertApplicationApplicant(attachment.getApplicationId(), userId);
+            }
             applicationAttachmentService.deleteAttachment(attachmentId);
             return ApiResponse.success("附件已删除");
         } catch (Exception e) {
@@ -147,6 +163,11 @@ public class AttachmentController {
     @DeleteMapping("/approval/{attachmentId}")
     public ApiResponse<Void> deleteApprovalAttachment(@PathVariable Long attachmentId) {
         try {
+            Long userId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            ApprovalAttachment attachment = approvalAttachmentService.getById(attachmentId);
+            if (attachment != null && !attachment.getOperatorId().equals(userId)) {
+                return ApiResponse.fail(403, "无权删除此附件");
+            }
             approvalAttachmentService.deleteAttachment(attachmentId);
             return ApiResponse.success("附件已删除");
         } catch (Exception e) {

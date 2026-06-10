@@ -23,6 +23,8 @@ export interface Application {
   approverId: number
   title: string
   description: string
+  appType?: number
+  voiceTranscript?: string
   remark?: string
   status: number
   rejectReason?: string
@@ -221,6 +223,12 @@ export const applicationAPI = {
   createApplication(data: ApplicationCreateRequest) {
     return http.post<Application>('/applications', data)
   },
+  createVoiceApplication(approverId: number, audio: Blob) {
+    const formData = new FormData()
+    formData.append('approverId', String(approverId))
+    formData.append('file', audio, 'voice.wav')
+    return http.post<Application>('/applications/voice', formData)
+  },
   updateApplication(id: number, data: ApplicationCreateRequest) {
     return http.put<Application>(`/applications/${id}`, data)
   },
@@ -236,6 +244,9 @@ export const applicationAPI = {
     formData.append('file', audio, 'voice.wav')
     formData.append('language', language)
     return http.post<VoiceParseResult>('/applications/voice-parse', formData)
+  },
+  transcribeVoiceApplication(id: number, language: 'auto' | 'zh' | 'en' = 'zh') {
+    return http.post<string>(`/applications/${id}/transcribe-voice`, null, { params: { language } })
   },
   getMyApplications(params: PaginationParams & { status?: number }) {
     return http.get<PageApplication>('/applications/my-applications', { params })

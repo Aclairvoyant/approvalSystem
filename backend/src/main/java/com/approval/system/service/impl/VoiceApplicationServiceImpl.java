@@ -46,18 +46,18 @@ public class VoiceApplicationServiceImpl implements IVoiceApplicationService {
 
     @Override
     public VoiceParseResult parseVoice(MultipartFile audio, String language) {
-        if (miMoConfig.getEnabled() == null || !miMoConfig.getEnabled()) {
-            throw new IllegalStateException("语音填写功能未启用");
-        }
         if (audio == null || audio.isEmpty()) {
             throw new IllegalArgumentException("音频内容为空");
         }
-        if (!StringUtils.hasText(miMoConfig.getApiKey()) || "your-mimo-api-key".equals(miMoConfig.getApiKey())) {
-            throw new IllegalStateException("MiMo API Key 未配置，请联系管理员");
-        }
 
         // 1) 语音转写
-        String transcript = transcribe(audio, language);
+        String transcript;
+        try {
+            transcript = transcribe(audio.getBytes(), audio.getContentType(), audio.getOriginalFilename(), language);
+        } catch (IOException e) {
+            log.error("读取音频内容失败", e);
+            throw new IllegalStateException("读取音频内容失败");
+        }
         if (!StringUtils.hasText(transcript)) {
             throw new IllegalStateException("未能识别出语音内容，请重试或说得更清楚一些");
         }
@@ -71,36 +71,46 @@ public class VoiceApplicationServiceImpl implements IVoiceApplicationService {
     /**
      * 调用 mimo-v2.5-asr 把音频转写为文字。
      */
-    private String transcribe(MultipartFile audio, String language) {
-        try {
-            String mime = resolveAudioMime(audio);
-            String base64 = Base64.getEncoder().encodeToString(audio.getBytes());
-            String dataUrl = "data:" + mime + ";base64," + base64;
+    @Override
+    public String transcribe(byte[] audioBytes, String contentType, String filename, String language) {
+        validateMimoConfig();
+        if (audioBytes == null || audioBytes.length == 0) {
+            throw new IllegalArgumentException("音频内容为空");
+        }
 
-            JSONObject inputAudio = new JSONObject();
-            inputAudio.put("data", dataUrl);
-            JSONObject audioPart = new JSONObject();
-            audioPart.put("type", "input_audio");
-            audioPart.put("input_audio", inputAudio);
+        String mime = resolveAudioMime(contentType, filename);
+        String base64 = Base64.getEncoder().encodeToString(audioBytes);
+        String dataUrl = "data:" + mime + ";base64," + base64;
 
-            JSONArray content = new JSONArray();
-            content.add(audioPart);
-            JSONObject message = new JSONObject();
-            message.put("role", "user");
-            message.put("content", content);
+        JSONObject inputAudio = new JSONObject();
+        inputAudio.put("data", dataUrl);
+        JSONObject audioPart = new JSONObject();
+        audioPart.put("type", "input_audio");
+        audioPart.put("input_audio", inputAudio);
 
-            JSONObject body = new JSONObject();
-            body.put("model", miMoConfig.getAsrModel());
-            body.put("messages", new JSONArray().fluentAdd(message));
-            JSONObject asrOptions = new JSONObject();
-            asrOptions.put("language", StringUtils.hasText(language) ? language : "zh");
-            body.put("asr_options", asrOptions);
+        JSONArray content = new JSONArray();
+        content.add(audioPart);
+        JSONObject message = new JSONObject();
+        message.put("role", "user");
+        message.put("content", content);
 
-            String responseText = postChatCompletion(body, "语音识别");
-            return extractMessageContent(responseText);
-        } catch (IOException e) {
-            log.error("读取音频内容失败", e);
-            throw new IllegalStateException("读取音频内容失败");
+        JSONObject body = new JSONObject();
+        body.put("model", miMoConfig.getAsrModel());
+        body.put("messages", new JSONArray().fluentAdd(message));
+        JSONObject asrOptions = new JSONObject();
+        asrOptions.put("language", StringUtils.hasText(language) ? language : "zh");
+        body.put("asr_options", asrOptions);
+
+        String responseText = postChatCompletion(body, "语音识别");
+        return extractMessageContent(responseText);
+    }
+
+    private void validateMimoConfig() {
+        if (miMoConfig.getEnabled() == null || !miMoConfig.getEnabled()) {
+            throw new IllegalStateException("语音转文字功能未启用");
+        }
+        if (!StringUtils.hasText(miMoConfig.getApiKey()) || "your-mimo-api-key".equals(miMoConfig.getApiKey())) {
+            throw new IllegalStateException("MiMo API Key 未配置，请联系管理员");
         }
     }
 
@@ -228,9 +238,7 @@ public class VoiceApplicationServiceImpl implements IVoiceApplicationService {
      * 根据上传文件的 content-type / 文件名推断 MiMo 所需的 MIME 类型。
      * MiMo 仅支持 wav 与 mp3。
      */
-    private String resolveAudioMime(MultipartFile audio) {
-        String contentType = audio.getContentType();
-        String filename = audio.getOriginalFilename();
+    private String resolveAudioMime(String contentType, String filename) {
         String lowerName = filename == null ? "" : filename.toLowerCase();
 
         if (lowerName.endsWith(".mp3")

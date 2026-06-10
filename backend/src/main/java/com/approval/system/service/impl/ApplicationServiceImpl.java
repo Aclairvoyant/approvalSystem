@@ -2,29 +2,43 @@ package com.approval.system.service.impl;
 
 import com.approval.system.common.enums.ApplicationStatusEnum;
 import com.approval.system.common.enums.OperationTypeEnum;
+import com.approval.system.common.config.AliyunOssProperties;
 import com.approval.system.entity.Application;
+import com.approval.system.entity.ApplicationAttachment;
 import com.approval.system.entity.OperationLog;
 import com.approval.system.entity.User;
 import com.approval.system.mapper.ApplicationMapper;
 import com.approval.system.mapper.OperationLogMapper;
 import com.approval.system.mapper.UserMapper;
+import com.approval.system.service.IApplicationAttachmentService;
 import com.approval.system.service.IApplicationService;
 import com.approval.system.service.IEmailService;
 import com.approval.system.service.INotificationService;
+import com.approval.system.service.IVoiceApplicationService;
 import com.approval.system.service.IVoiceNotificationService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Slf4j
 @Service
 public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Application> implements IApplicationService {
+
+    private static final int APP_TYPE_NORMAL = 1;
+    private static final int APP_TYPE_VOICE = 2;
+    private static final String VOICE_APPLICATION_TITLE = "语音申请";
+    private static final String VOICE_APPLICATION_DESCRIPTION = "语音申请，请播放语音内容";
 
     @Autowired
     private OperationLogMapper operationLogMapper;
@@ -41,12 +55,25 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
     @Autowired
     private INotificationService notificationService;
 
+    @Autowired
+    private IApplicationAttachmentService applicationAttachmentService;
+
+    @Autowired
+    private IVoiceApplicationService voiceApplicationService;
+
+    @Autowired
+    private RestTemplate restTemplate;
+
+    @Autowired
+    private AliyunOssProperties ossProperties;
+
     @Override
     @Transactional
     public Application createApplication(Long applicantId, Long approverId, String title, String description, String remark, Boolean sendVoiceNotification) {
         Application application = Application.builder()
                 .applicantId(applicantId)
                 .approverId(approverId)
+                .appType(APP_TYPE_NORMAL)
                 .title(title)
                 .description(description)
                 .remark(remark)
@@ -164,6 +191,85 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
 
 
         return application;
+    }
+
+    @Override
+    @Transactional
+    public Application createVoiceApplication(Long applicantId, Long approverId, MultipartFile audio) {
+        validateVoiceAudio(audio);
+
+        Application application = Application.builder()
+                .applicantId(applicantId)
+                .approverId(approverId)
+                .appType(APP_TYPE_VOICE)
+                .title(VOICE_APPLICATION_TITLE)
+                .description(VOICE_APPLICATION_DESCRIPTION)
+                .status(ApplicationStatusEnum.PENDING.getCode())
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+
+        this.save(application);
+
+        recordOperationLog(application.getId(), applicantId, OperationTypeEnum.CREATE.getCode(),
+                null, ApplicationStatusEnum.PENDING.getCode(), "创建语音申请");
+
+        applicationAttachmentService.uploadApplicationAttachment(application.getId(), audio);
+
+        return application;
+    }
+
+    @Override
+    @Transactional
+    public String transcribeVoiceApplication(Long applicationId, Long userId, String language) {
+        Application application = requireApplication(applicationId);
+        assertParticipant(application, userId);
+
+        if (!Integer.valueOf(APP_TYPE_VOICE).equals(application.getAppType())) {
+            throw new RuntimeException("不是语音申请");
+        }
+
+        if (StringUtils.hasText(application.getVoiceTranscript())) {
+            return application.getVoiceTranscript();
+        }
+
+        ApplicationAttachment audioAttachment = findVoiceAttachment(applicationId);
+        byte[] audioBytes = downloadAudio(audioAttachment);
+        String transcript = voiceApplicationService.transcribe(
+                audioBytes,
+                audioAttachment.getFileType(),
+                audioAttachment.getFileName(),
+                language
+        );
+        if (!StringUtils.hasText(transcript)) {
+            throw new RuntimeException("未能识别出语音内容，请重试");
+        }
+
+        application.setVoiceTranscript(transcript);
+        application.setUpdatedAt(LocalDateTime.now());
+        this.updateById(application);
+        return transcript;
+    }
+
+    @Override
+    public void assertApplicationParticipant(Long applicationId, Long userId) {
+        assertParticipant(requireApplication(applicationId), userId);
+    }
+
+    @Override
+    public void assertApplicationApplicant(Long applicationId, Long userId) {
+        Application application = requireApplication(applicationId);
+        if (!application.getApplicantId().equals(userId)) {
+            throw new RuntimeException("无权操作此申请");
+        }
+    }
+
+    @Override
+    public void assertApplicationApprover(Long applicationId, Long userId) {
+        Application application = requireApplication(applicationId);
+        if (!application.getApproverId().equals(userId)) {
+            throw new RuntimeException("无权审批此申请");
+        }
     }
 
     @Override
@@ -489,6 +595,81 @@ public class ApplicationServiceImpl extends ServiceImpl<ApplicationMapper, Appli
     @Override
     public Application getApplicationDetail(Long applicationId) {
         return this.getById(applicationId);
+    }
+
+    private Application requireApplication(Long applicationId) {
+        Application application = this.getById(applicationId);
+        if (application == null) {
+            throw new RuntimeException("申请单不存在");
+        }
+        return application;
+    }
+
+    private void assertParticipant(Application application, Long userId) {
+        if (!application.getApplicantId().equals(userId) && !application.getApproverId().equals(userId)) {
+            throw new RuntimeException("无权访问此申请");
+        }
+    }
+
+    private ApplicationAttachment findVoiceAttachment(Long applicationId) {
+        QueryWrapper<ApplicationAttachment> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("application_id", applicationId);
+        queryWrapper.likeRight("file_type", "audio/");
+        queryWrapper.orderByDesc("created_at");
+        List<ApplicationAttachment> attachments = applicationAttachmentService.list(queryWrapper);
+        if (attachments == null || attachments.isEmpty()) {
+            throw new RuntimeException("未找到语音文件");
+        }
+        return attachments.get(0);
+    }
+
+    private byte[] downloadAudio(ApplicationAttachment attachment) {
+        validateTrustedVoiceUrl(attachment.getFileUrl());
+        try {
+            ResponseEntity<byte[]> response = restTemplate.getForEntity(attachment.getFileUrl(), byte[].class);
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null || response.getBody().length == 0) {
+                throw new RuntimeException("读取语音文件失败");
+            }
+            return response.getBody();
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("下载语音文件失败，attachmentId: {}", attachment.getId(), e);
+            throw new RuntimeException("读取语音文件失败");
+        }
+    }
+
+    private void validateVoiceAudio(MultipartFile audio) {
+        if (audio == null || audio.isEmpty()) {
+            throw new RuntimeException("语音内容为空");
+        }
+
+        String contentType = audio.getContentType();
+        String filename = audio.getOriginalFilename();
+        String lowerName = filename == null ? "" : filename.toLowerCase();
+        boolean wavAudio = lowerName.endsWith(".wav")
+                || "audio/wav".equals(contentType)
+                || "audio/x-wav".equals(contentType)
+                || "audio/wave".equals(contentType);
+        if (!wavAudio) {
+            throw new RuntimeException("仅支持 WAV 语音文件");
+        }
+
+        Long maxFileSize = ossProperties == null ? null : ossProperties.getMaxFileSize();
+        if (maxFileSize != null && maxFileSize > 0 && audio.getSize() > maxFileSize) {
+            throw new RuntimeException("语音文件大小超过限制");
+        }
+    }
+
+    private void validateTrustedVoiceUrl(String fileUrl) {
+        String bucketUrl = ossProperties == null ? null : ossProperties.getBucketUrl();
+        if (!StringUtils.hasText(bucketUrl) || !StringUtils.hasText(fileUrl)) {
+            return;
+        }
+        String normalizedBucketUrl = bucketUrl.endsWith("/") ? bucketUrl : bucketUrl + "/";
+        if (!fileUrl.startsWith(normalizedBucketUrl)) {
+            throw new RuntimeException("语音文件来源不可信");
+        }
     }
 
     /**

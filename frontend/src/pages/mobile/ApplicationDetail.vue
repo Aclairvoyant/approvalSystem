@@ -34,8 +34,51 @@
         <van-cell title="审批人ID" :value="application?.approverId" />
       </van-cell-group>
 
+      <!-- 语音申请 -->
+      <van-cell-group v-if="hasVoiceSection" inset class="info-group">
+        <van-cell title="语音申请" />
+        <div class="voice-application-section">
+          <div
+            v-for="att in applicationAudioAttachments"
+            :key="att.attachmentId || att.fileUrl"
+            class="voice-audio-item"
+          >
+            <div class="voice-audio-title">
+              <van-icon name="volume-o" />
+              <span>{{ att.fileName || '语音内容' }}</span>
+            </div>
+            <audio
+              class="voice-audio-player"
+              :src="att.fileUrl"
+              controls
+              preload="none"
+            ></audio>
+          </div>
+
+          <div v-if="voiceTranscript" class="voice-transcript-box">
+            <div class="voice-transcript-label">
+              <van-icon name="chat-o" />
+              <span>转写文本</span>
+            </div>
+            <div class="voice-transcript-text">{{ voiceTranscript }}</div>
+          </div>
+
+          <van-button
+            class="voice-transcribe-button"
+            type="primary"
+            plain
+            block
+            icon="chat-o"
+            :loading="transcribingVoice"
+            @click="handleTranscribeVoice"
+          >
+            转文字
+          </van-button>
+        </div>
+      </van-cell-group>
+
       <!-- 申请附件 -->
-      <van-cell-group v-if="applicationAttachments.length > 0" inset class="info-group">
+      <van-cell-group v-if="applicationImages.length > 0 || applicationFiles.length > 0" inset class="info-group">
         <van-cell title="申请附件" />
         <div class="attachment-section">
           <!-- 图片预览 -->
@@ -59,7 +102,7 @@
       </van-cell-group>
 
       <!-- 审批附件 -->
-      <van-cell-group v-if="approvalAttachments.length > 0" inset class="info-group">
+      <van-cell-group v-if="approvalImages.length > 0 || approvalFiles.length > 0" inset class="info-group">
         <van-cell title="审批附件" />
         <div class="attachment-section">
           <!-- 图片预览 -->
@@ -340,14 +383,14 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast, showSuccessToast, showLoadingToast, closeToast, showImagePreview, showConfirmDialog } from 'vant'
 import { useUserStore } from '@/store/modules/user'
-import { applicationAPI, logAPI, attachmentAPI, commentAPI, type ApplicationComment } from '@/services/api'
+import { applicationAPI, logAPI, attachmentAPI, commentAPI, type Application, type ApplicationComment } from '@/services/api'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 
 const applicationId = ref<number>(parseInt(route.params.id as string))
-const application = ref<any>(null)
+const application = ref<Application | null>(null)
 const operationLogs = ref<any[]>([])
 const applicationAttachments = ref<any[]>([])
 const approvalAttachments = ref<any[]>([])
@@ -357,6 +400,8 @@ const loading = ref(true)
 const approving = ref(false)
 const rejecting = ref(false)
 const sendingVoiceNotification = ref(false)
+const voiceTranscript = ref('')
+const transcribingVoice = ref(false)
 
 // 评论相关
 const comments = ref<(ApplicationComment & { showPopover?: boolean })[]>([])
@@ -406,23 +451,34 @@ const commentActions = [
 ]
 
 // 判断是否是图片
-const isImage = (fileType: string): boolean => {
-  return fileType?.startsWith('image/')
+const isImage = (fileType?: string): boolean => {
+  return !!fileType && fileType.startsWith('image/')
+}
+
+const isAudio = (fileType?: string): boolean => {
+  return !!fileType && fileType.startsWith('audio/')
 }
 
 // 分离图片和文件
+const applicationAudioAttachments = computed(() =>
+  applicationAttachments.value.filter(a => isAudio(a.fileType))
+)
 const applicationImages = computed(() =>
   applicationAttachments.value.filter(a => isImage(a.fileType))
 )
 const applicationFiles = computed(() =>
-  applicationAttachments.value.filter(a => !isImage(a.fileType))
+  applicationAttachments.value.filter(a => !isImage(a.fileType) && !isAudio(a.fileType))
 )
 const approvalImages = computed(() =>
   approvalAttachments.value.filter(a => isImage(a.fileType))
 )
 const approvalFiles = computed(() =>
-  approvalAttachments.value.filter(a => !isImage(a.fileType))
+  approvalAttachments.value.filter(a => !isImage(a.fileType) && !isAudio(a.fileType))
 )
+
+const hasVoiceSection = computed(() => {
+  return applicationAudioAttachments.value.length > 0 || application.value?.appType === 2 || !!voiceTranscript.value
+})
 
 const canApprove = computed(() => {
   return application.value?.approverId === userStore.userId && application.value?.status === 1
@@ -455,6 +511,7 @@ const fetchApplicationDetail = async (): Promise<void> => {
   try {
     const response = await applicationAPI.getApplicationDetail(applicationId.value)
     application.value = response
+    voiceTranscript.value = response.voiceTranscript || ''
   } catch (error: any) {
     showToast(error.message || '获取申请详情失败')
   }
@@ -574,6 +631,25 @@ const handleSendVoiceNotification = async (): Promise<void> => {
     showToast(error.message || '发送失败')
   } finally {
     sendingVoiceNotification.value = false
+  }
+}
+
+const handleTranscribeVoice = async (): Promise<void> => {
+  transcribingVoice.value = true
+  showLoadingToast({ message: '转写中...', forbidClick: true })
+  try {
+    const transcript = await applicationAPI.transcribeVoiceApplication(applicationId.value, 'zh')
+    voiceTranscript.value = transcript || ''
+    if (application.value) {
+      application.value.voiceTranscript = voiceTranscript.value
+    }
+    closeToast()
+    showSuccessToast('转写完成')
+  } catch (error: any) {
+    closeToast()
+    showToast(error.message || '转写失败')
+  } finally {
+    transcribingVoice.value = false
   }
 }
 
@@ -806,6 +882,63 @@ const formatCommentTime = (date: string): string => {
 .file-item :deep(.van-icon) {
   color: #999;
   font-size: 18px;
+}
+
+.voice-application-section {
+  padding: 12px 16px;
+}
+
+.voice-audio-item {
+  padding: 12px;
+  background: #f7f8fa;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.voice-audio-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: #323233;
+  font-size: 14px;
+}
+
+.voice-audio-title :deep(.van-icon) {
+  color: #667eea;
+  font-size: 18px;
+}
+
+.voice-audio-player {
+  display: block;
+  width: 100%;
+}
+
+.voice-transcript-box {
+  padding: 12px;
+  background: #f7f8fa;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.voice-transcript-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+  color: #969799;
+  font-size: 12px;
+}
+
+.voice-transcript-text {
+  color: #323233;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.voice-transcribe-button {
+  margin-top: 4px;
 }
 
 .approval-form {
