@@ -101,6 +101,20 @@ CREATE TABLE operation_logs (
   INDEX idx_created_at (created_at)
 ) COMMENT='操作日志表';
 
+-- 系统运行配置表（后台可编辑的邮件与语音模型配置）
+CREATE TABLE system_settings (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '配置ID',
+  setting_key VARCHAR(100) NOT NULL COMMENT '配置键',
+  setting_value TEXT COMMENT '配置值',
+  `sensitive` TINYINT NOT NULL DEFAULT 0 COMMENT '是否敏感配置',
+  description VARCHAR(255) COMMENT '配置说明',
+  updated_by BIGINT COMMENT '最后更新管理员ID',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  UNIQUE KEY uk_system_settings_key (setting_key),
+  INDEX idx_system_settings_updated_at (updated_at)
+) COMMENT='系统运行配置表';
+
 -- 申请附件表（存储图片等附件）
 CREATE TABLE application_attachments (
   id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '附件ID',

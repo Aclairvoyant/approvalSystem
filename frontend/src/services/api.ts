@@ -190,6 +190,66 @@ export interface MimoConfigResponse {
   apiKeyMasked?: string
 }
 
+export interface EmailSettingsResponse {
+  host?: string
+  port?: number
+  username?: string
+  fromEmail?: string
+  sslEnabled?: boolean
+  passwordConfigured?: boolean
+  passwordMasked?: string
+}
+
+export interface EmailSettingsUpdateRequest {
+  host?: string
+  port?: number
+  username?: string
+  fromEmail?: string
+  password?: string
+  sslEnabled?: boolean
+}
+
+export interface VoiceModelSettingsResponse {
+  enabled?: boolean
+  provider?: string
+  asrBaseUrl?: string
+  asrAuthScheme?: string
+  asrApiKeyHeader?: string
+  asrModel?: string
+  asrApiKeyConfigured?: boolean
+  asrApiKeyMasked?: string
+  chatBaseUrl?: string
+  chatAuthScheme?: string
+  chatApiKeyHeader?: string
+  chatModel?: string
+  chatApiKeyConfigured?: boolean
+  chatApiKeyMasked?: string
+  baseUrl?: string
+  authScheme?: string
+  apiKeyHeader?: string
+  apiKeyConfigured?: boolean
+  apiKeyMasked?: string
+}
+
+export interface VoiceModelSettingsUpdateRequest {
+  enabled?: boolean
+  provider?: string
+  asrBaseUrl?: string
+  asrAuthScheme?: string
+  asrApiKeyHeader?: string
+  asrApiKey?: string
+  asrModel?: string
+  chatBaseUrl?: string
+  chatAuthScheme?: string
+  chatApiKeyHeader?: string
+  chatApiKey?: string
+  chatModel?: string
+  baseUrl?: string
+  authScheme?: string
+  apiKeyHeader?: string
+  apiKey?: string
+}
+
 // 认证相关 API
 export const authAPI = {
   register(data: RegisterRequest) {
@@ -400,6 +460,18 @@ export const adminAPI = {
     return http.post<void>(`/admin/applications/${applicationId}/reject`, null, {
       params: { rejectReason }
     })
+  },
+  getEmailSettings() {
+    return http.get<EmailSettingsResponse>('/admin/settings/email')
+  },
+  updateEmailSettings(data: EmailSettingsUpdateRequest) {
+    return http.put<EmailSettingsResponse>('/admin/settings/email', data)
+  },
+  getVoiceSettings() {
+    return http.get<VoiceModelSettingsResponse>('/admin/settings/voice')
+  },
+  updateVoiceSettings(data: VoiceModelSettingsUpdateRequest) {
+    return http.put<VoiceModelSettingsResponse>('/admin/settings/voice', data)
   },
   getMimoConfig() {
     return http.get<MimoConfigResponse>('/admin/mimo/config')

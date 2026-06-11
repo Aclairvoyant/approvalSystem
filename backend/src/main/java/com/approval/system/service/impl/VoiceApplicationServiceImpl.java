@@ -4,7 +4,9 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.approval.system.config.MiMoConfig;
+import com.approval.system.dto.EffectiveVoiceModelSettings;
 import com.approval.system.dto.VoiceParseResult;
+import com.approval.system.service.ISystemSettingService;
 import com.approval.system.service.IVoiceApplicationService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.Base64;
+import java.util.Locale;
 
 /**
  * 语音填写申请服务实现。
@@ -32,6 +35,9 @@ public class VoiceApplicationServiceImpl implements IVoiceApplicationService {
 
     @Autowired
     private MiMoConfig miMoConfig;
+
+    @Autowired(required = false)
+    private ISystemSettingService systemSettingService;
 
     @Autowired
     private RestTemplate restTemplate;
@@ -73,7 +79,7 @@ public class VoiceApplicationServiceImpl implements IVoiceApplicationService {
      */
     @Override
     public String transcribe(byte[] audioBytes, String contentType, String filename, String language) {
-        validateMimoConfig();
+        EffectiveVoiceModelSettings settings = validateAsrConfig();
         if (audioBytes == null || audioBytes.length == 0) {
             throw new IllegalArgumentException("音频内容为空");
         }
@@ -95,29 +101,81 @@ public class VoiceApplicationServiceImpl implements IVoiceApplicationService {
         message.put("content", content);
 
         JSONObject body = new JSONObject();
-        body.put("model", miMoConfig.getAsrModel());
+        body.put("model", settings.getAsrModel());
         body.put("messages", new JSONArray().fluentAdd(message));
         JSONObject asrOptions = new JSONObject();
         asrOptions.put("language", StringUtils.hasText(language) ? language : "zh");
         body.put("asr_options", asrOptions);
 
-        String responseText = postChatCompletion(body, "语音识别");
+        String responseText = postChatCompletion(
+                body,
+                "语音识别",
+                settings.getAsrBaseUrl(),
+                settings.getAsrAuthScheme(),
+                settings.getAsrApiKeyHeader(),
+                settings.getAsrApiKey()
+        );
         return extractMessageContent(responseText);
     }
 
-    private void validateMimoConfig() {
-        if (miMoConfig.getEnabled() == null || !miMoConfig.getEnabled()) {
+    private EffectiveVoiceModelSettings validateAsrConfig() {
+        EffectiveVoiceModelSettings settings = resolveVoiceModelSettings();
+        if (settings.getEnabled() == null || !settings.getEnabled()) {
             throw new IllegalStateException("语音转文字功能未启用");
         }
-        if (!StringUtils.hasText(miMoConfig.getApiKey()) || "your-mimo-api-key".equals(miMoConfig.getApiKey())) {
-            throw new IllegalStateException("MiMo API Key 未配置，请联系管理员");
+        if (!isConfiguredApiKey(settings.getAsrApiKey())) {
+            throw new IllegalStateException("语音识别 API Key 未配置，请联系管理员");
         }
+        if (!StringUtils.hasText(settings.getAsrBaseUrl())) {
+            throw new IllegalStateException("语音识别服务地址未配置");
+        }
+        return settings;
+    }
+
+    private EffectiveVoiceModelSettings validateChatConfig() {
+        EffectiveVoiceModelSettings settings = resolveVoiceModelSettings();
+        if (settings.getEnabled() == null || !settings.getEnabled()) {
+            throw new IllegalStateException("语音转文字功能未启用");
+        }
+        if (!isConfiguredApiKey(settings.getChatApiKey())) {
+            throw new IllegalStateException("语音大模型 API Key 未配置，请联系管理员");
+        }
+        if (!StringUtils.hasText(settings.getChatBaseUrl())) {
+            throw new IllegalStateException("语音大模型服务地址未配置");
+        }
+        return settings;
+    }
+
+    private EffectiveVoiceModelSettings resolveVoiceModelSettings() {
+        if (systemSettingService != null) {
+            return systemSettingService.getEffectiveVoiceModelSettings();
+        }
+
+        return EffectiveVoiceModelSettings.builder()
+                .enabled(miMoConfig.getEnabled())
+                .provider("mimo")
+                .asrBaseUrl(miMoConfig.getBaseUrl())
+                .asrAuthScheme("api_key")
+                .asrApiKeyHeader("api-key")
+                .asrApiKey(miMoConfig.getApiKey())
+                .asrModel(miMoConfig.getAsrModel())
+                .chatBaseUrl(miMoConfig.getBaseUrl())
+                .chatAuthScheme("api_key")
+                .chatApiKeyHeader("api-key")
+                .chatApiKey(miMoConfig.getApiKey())
+                .chatModel(miMoConfig.getChatModel())
+                .baseUrl(miMoConfig.getBaseUrl())
+                .authScheme("api_key")
+                .apiKeyHeader("api-key")
+                .apiKey(miMoConfig.getApiKey())
+                .build();
     }
 
     /**
      * 调用 mimo-v2.5 从转写文字中抽取申请字段。
      */
     private VoiceParseResult extractFields(String transcript) {
+        EffectiveVoiceModelSettings settings = validateChatConfig();
         JSONObject systemMsg = new JSONObject();
         systemMsg.put("role", "system");
         systemMsg.put("content", EXTRACT_SYSTEM_PROMPT);
@@ -126,11 +184,18 @@ public class VoiceApplicationServiceImpl implements IVoiceApplicationService {
         userMsg.put("content", transcript);
 
         JSONObject body = new JSONObject();
-        body.put("model", miMoConfig.getChatModel());
+        body.put("model", settings.getChatModel());
         body.put("messages", new JSONArray().fluentAdd(systemMsg).fluentAdd(userMsg));
         body.put("temperature", 0.2);
 
-        String responseText = postChatCompletion(body, "字段抽取");
+        String responseText = postChatCompletion(
+                body,
+                "字段抽取",
+                settings.getChatBaseUrl(),
+                settings.getChatAuthScheme(),
+                settings.getChatApiKeyHeader(),
+                settings.getChatApiKey()
+        );
         String content = extractMessageContent(responseText);
         return parseExtractedJson(content, transcript);
     }
@@ -138,14 +203,19 @@ public class VoiceApplicationServiceImpl implements IVoiceApplicationService {
     /**
      * 发送 chat/completions 请求，返回响应体字符串。
      */
-    private String postChatCompletion(JSONObject body, String stage) {
+    private String postChatCompletion(
+            JSONObject body,
+            String stage,
+            String baseUrl,
+            String authScheme,
+            String apiKeyHeader,
+            String apiKey) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        // MiMo 鉴权头为 api-key，而非标准的 Authorization: Bearer
-        headers.set("api-key", miMoConfig.getApiKey());
+        applyAuthHeaders(headers, authScheme, apiKeyHeader, apiKey);
 
         HttpEntity<String> request = new HttpEntity<>(body.toJSONString(), headers);
-        String url = miMoConfig.getBaseUrl() + "/chat/completions";
+        String url = buildChatCompletionsUrl(baseUrl);
 
         try {
             ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
@@ -160,6 +230,35 @@ public class VoiceApplicationServiceImpl implements IVoiceApplicationService {
             log.error("MiMo {} 调用异常", stage, e);
             throw new IllegalStateException("MiMo " + stage + "调用异常：" + e.getMessage());
         }
+    }
+
+    private void applyAuthHeaders(HttpHeaders headers, String authScheme, String apiKeyHeader, String apiKey) {
+        if ("bearer".equalsIgnoreCase(authScheme)) {
+            headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey);
+            return;
+        }
+
+        String headerName = StringUtils.hasText(apiKeyHeader) ? apiKeyHeader : "api-key";
+        headers.set(headerName, apiKey);
+    }
+
+    private String buildChatCompletionsUrl(String baseUrl) {
+        String normalized = baseUrl.trim();
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized + "/chat/completions";
+    }
+
+    private boolean isConfiguredApiKey(String apiKey) {
+        if (!StringUtils.hasText(apiKey)) {
+            return false;
+        }
+        String normalized = apiKey.trim().toLowerCase(Locale.ROOT);
+        return !normalized.startsWith("your-")
+                && !normalized.startsWith("replace-with-")
+                && !normalized.contains("your_")
+                && !normalized.contains("请替换");
     }
 
     /**

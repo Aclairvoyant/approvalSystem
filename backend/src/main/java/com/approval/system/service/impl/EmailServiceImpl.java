@@ -2,7 +2,9 @@ package com.approval.system.service.impl;
 
 import cn.hutool.extra.mail.MailAccount;
 import cn.hutool.extra.mail.MailUtil;
+import com.approval.system.dto.EffectiveEmailSettings;
 import com.approval.system.service.IEmailService;
+import com.approval.system.service.ISystemSettingService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,6 +22,9 @@ public class EmailServiceImpl implements IEmailService {
     @Autowired
     private CacheManager cacheManager;
 
+    @Autowired(required = false)
+    private ISystemSettingService systemSettingService;
+
     @Value("${spring.mail.host}")
     private String mailHost;
 
@@ -32,6 +37,9 @@ public class EmailServiceImpl implements IEmailService {
     @Value("${spring.mail.password}")
     private String mailPassword;
 
+    @Value("${spring.mail.properties.mail.smtp.ssl.enable:true}")
+    private Boolean mailSslEnabled;
+
     private static final int CODE_LENGTH = 6;
     private static final int RATE_LIMIT_SECONDS = 60; // 60秒内只能发送一次
 
@@ -39,16 +47,32 @@ public class EmailServiceImpl implements IEmailService {
      * 创建邮件账号配置
      */
     private MailAccount createMailAccount() {
+        EffectiveEmailSettings settings = resolveEmailSettings();
         MailAccount account = new MailAccount();
-        account.setHost(mailHost);
-        account.setPort(mailPort);
+        account.setHost(settings.getHost());
+        account.setPort(settings.getPort());
         account.setAuth(true);
-        account.setUser(fromEmail);
-        account.setPass(mailPassword);
-        account.setFrom(fromEmail);
-        account.setSslEnable(true);
+        account.setUser(settings.getUsername());
+        account.setPass(settings.getPassword());
+        account.setFrom(settings.getFromEmail());
+        account.setSslEnable(Boolean.TRUE.equals(settings.getSslEnabled()));
         account.setCharset(Charset.defaultCharset());
         return account;
+    }
+
+    private EffectiveEmailSettings resolveEmailSettings() {
+        if (systemSettingService != null) {
+            return systemSettingService.getEffectiveEmailSettings();
+        }
+
+        return EffectiveEmailSettings.builder()
+                .host(mailHost)
+                .port(mailPort)
+                .username(fromEmail)
+                .fromEmail(fromEmail)
+                .password(mailPassword)
+                .sslEnabled(mailSslEnabled)
+                .build();
     }
 
     @Override
