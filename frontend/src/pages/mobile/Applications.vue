@@ -46,6 +46,14 @@
                 <van-tag :type="getStatusType(app.status)" size="medium">
                   {{ getStatusText(app.status) }}
                 </van-tag>
+                <van-tag
+                  v-if="shouldShowVoiceUploadStatus(app)"
+                  :type="getVoiceUploadStatusType(app.voiceStatus)"
+                  size="medium"
+                  plain
+                >
+                  {{ getVoiceUploadStatusText(app.voiceStatus) }}
+                </van-tag>
               </div>
               <div class="card-content">{{ app.description }}</div>
               <div class="card-footer">
@@ -77,6 +85,14 @@
                 @click.stop="handleCancel(app)"
               />
               <van-button
+                v-if="app.appType === 2 && app.voiceStatus === 3"
+                square
+                type="primary"
+                text="Retry"
+                class="swipe-btn"
+                @click.stop="retryVoiceUpload(app)"
+              />
+              <van-button
                 square
                 type="warning"
                 text="删除"
@@ -98,52 +114,64 @@
       <div class="create-form">
         <van-form @submit="submitApplication">
           <van-cell-group inset>
-            <van-cell
-              title="申请模板"
-              :value="selectedTemplateName || '选择常用模板'"
-              is-link
-              clickable
-              @click="openTemplatePicker"
-            >
-              <template #icon>
-                <van-icon name="records-o" class="template-cell-icon" />
+            <van-field name="createMode" label="申请方式">
+              <template #input>
+                <van-radio-group v-model="createMode" direction="horizontal">
+                  <van-radio name="normal">普通申请</van-radio>
+                  <van-radio name="voice">语音申请</van-radio>
+                </van-radio-group>
               </template>
-            </van-cell>
-            <van-cell
-              title="语音填写"
-              value="说一句话自动填表"
-              is-link
-              clickable
-              @click="startVoiceFill"
-            >
-              <template #icon>
-                <van-icon name="volume-o" class="voice-cell-icon" />
-              </template>
-            </van-cell>
-            <van-cell v-if="voiceTranscript" class="voice-transcript">
-              <template #title>
-                <div class="voice-transcript-label">
-                  <van-icon name="chat-o" /> 识别原文
-                </div>
-                <div class="voice-transcript-text">{{ voiceTranscript }}</div>
-              </template>
-            </van-cell>
-            <van-field
-              v-model="newApplication.title"
-              label="事项标题"
-              placeholder="请输入事项标题"
-              required
-              :rules="[{ required: true, message: '请输入事项标题' }]"
-            />
-            <van-field
-              v-model="newApplication.description"
-              label="事项描述"
-              type="textarea"
-              placeholder="请输入事项描述"
-              rows="3"
-              required
-              :rules="[{ required: true, message: '请输入事项描述' }]"
-            />
+            </van-field>
+
+            <template v-if="createMode === 'normal'">
+              <van-cell
+                title="申请模板"
+                :value="selectedTemplateName || '选择常用模板'"
+                is-link
+                clickable
+                @click="openTemplatePicker"
+              >
+                <template #icon>
+                  <van-icon name="records-o" class="template-cell-icon" />
+                </template>
+              </van-cell>
+              <van-cell
+                title="语音填写"
+                value="说一句话自动填表"
+                is-link
+                clickable
+                @click="startVoiceFill"
+              >
+                <template #icon>
+                  <van-icon name="volume-o" class="voice-cell-icon" />
+                </template>
+              </van-cell>
+              <van-cell v-if="voiceTranscript" class="voice-transcript">
+                <template #title>
+                  <div class="voice-transcript-label">
+                    <van-icon name="chat-o" /> 识别原文
+                  </div>
+                  <div class="voice-transcript-text">{{ voiceTranscript }}</div>
+                </template>
+              </van-cell>
+              <van-field
+                v-model="newApplication.title"
+                label="事项标题"
+                placeholder="请输入事项标题"
+                required
+                :rules="[{ required: true, message: '请输入事项标题' }]"
+              />
+              <van-field
+                v-model="newApplication.description"
+                label="事项描述"
+                type="textarea"
+                placeholder="请输入事项描述"
+                rows="3"
+                required
+                :rules="[{ required: true, message: '请输入事项描述' }]"
+              />
+            </template>
+
             <van-field
               v-model="selectedApproverName"
               is-link
@@ -153,46 +181,121 @@
               required
               @click="showApproverPicker = true"
             />
-            <van-field
-              v-model="newApplication.remark"
-              label="备注"
-              placeholder="请输入备注（选填）"
-            />
-            <van-field name="uploader" label="附件">
-              <template #input>
-                <van-uploader
-                  v-model="uploadFileList"
-                  :max-count="5"
-                  :max-size="10 * 1024 * 1024"
-                  accept="image/*,.pdf,.doc,.docx"
-                  @oversize="onOversize"
-                />
-              </template>
-            </van-field>
-            <van-field name="voiceNotification" label="语音通知">
-              <template #input>
-                <van-switch
-                  v-model="newApplication.sendVoiceNotification"
-                  size="20"
-                  :disabled="!userStore.voiceNotificationEnabled"
-                />
-              </template>
-              <template #right-icon v-if="!userStore.voiceNotificationEnabled">
-                <van-icon name="warning-o" color="#ff7d00" />
-              </template>
-            </van-field>
-            <van-cell v-if="!userStore.voiceNotificationEnabled" class="voice-warning">
-              <template #title>
-                <span style="color: #ff7d00; font-size: 12px;">
-                  ⚠️ 语音通知权限未开通，请联系管理员开通后使用
-                </span>
-              </template>
-            </van-cell>
+
+            <template v-if="createMode === 'normal'">
+              <van-field
+                v-model="newApplication.remark"
+                label="备注"
+                placeholder="请输入备注（选填）"
+              />
+              <van-field name="uploader" label="附件">
+                <template #input>
+                  <van-uploader
+                    v-model="uploadFileList"
+                    :max-count="5"
+                    :max-size="10 * 1024 * 1024"
+                    accept="image/*,.pdf,.doc,.docx"
+                    @oversize="onOversize"
+                  />
+                </template>
+              </van-field>
+              <van-field name="voiceNotification" label="语音通知">
+                <template #input>
+                  <van-switch
+                    v-model="newApplication.sendVoiceNotification"
+                    size="20"
+                    :disabled="!userStore.voiceNotificationEnabled"
+                  />
+                </template>
+                <template #right-icon v-if="!userStore.voiceNotificationEnabled">
+                  <van-icon name="warning-o" color="#ff7d00" />
+                </template>
+              </van-field>
+              <van-cell v-if="!userStore.voiceNotificationEnabled" class="voice-warning">
+                <template #title>
+                  <span style="color: #ff7d00; font-size: 12px;">
+                    ⚠️ 语音通知权限未开通，请联系管理员开通后使用
+                  </span>
+                </template>
+              </van-cell>
+            </template>
+
+            <template v-else>
+              <van-cell v-if="!recordingAvailable" class="voice-recording-tip">
+                <template #title>
+                  <div class="voice-recording-tip-title">
+                    <van-icon name="info-o" /> 录音暂不可用
+                  </div>
+                  <div class="voice-recording-tip-text">
+                    {{ recordingSupport.message }}，可上传音频文件
+                  </div>
+                </template>
+              </van-cell>
+              <van-cell
+                title="语音内容"
+                :value="voiceRequestValueText"
+                is-link
+                clickable
+                @click="startVoiceRequest"
+              >
+                <template #icon>
+                  <van-icon name="volume-o" class="voice-cell-icon" />
+                </template>
+              </van-cell>
+              <van-field name="voiceUploader" label="上传音频">
+                <template #input>
+                  <van-uploader
+                    v-model="voiceUploadFileList"
+                    :max-count="1"
+                    :max-size="10 * 1024 * 1024"
+                    accept="audio/*,.wav,.mp3,.m4a,.aac,.webm,.ogg"
+                    :after-read="handleVoiceFileRead"
+                    @oversize="onOversize"
+                  >
+                    <van-button
+                      size="small"
+                      round
+                      plain
+                      type="primary"
+                      icon="plus"
+                      :loading="voiceUploadConverting"
+                    >
+                      选择音频
+                    </van-button>
+                  </van-uploader>
+                </template>
+              </van-field>
+              <van-cell v-if="voiceRequestAudioUrl" class="voice-request-preview">
+                <template #title>
+                  <audio
+                    class="voice-request-audio"
+                    :src="voiceRequestAudioUrl"
+                    controls
+                    preload="none"
+                  ></audio>
+                  <div class="voice-request-actions">
+                    <van-button size="small" round plain type="primary" @click.stop="startVoiceRequest">
+                      重录
+                    </van-button>
+                    <van-button size="small" round plain @click.stop="clearVoiceRequestRecording">
+                      取消
+                    </van-button>
+                  </div>
+                </template>
+              </van-cell>
+            </template>
           </van-cell-group>
 
           <div class="form-actions">
-            <van-button round block type="primary" native-type="submit" :loading="submitting">
-              提交申请
+            <van-button
+              round
+              block
+              type="primary"
+              native-type="submit"
+              :loading="submitting"
+              :disabled="voiceUploadConverting"
+            >
+              {{ createMode === 'voice' ? '提交语音申请' : '提交申请' }}
             </van-button>
           </div>
         </van-form>
@@ -218,10 +321,10 @@
     >
       <div class="voice-recorder">
         <div class="voice-recorder-title">
-          {{ voiceParsing ? '正在识别...' : (recording ? '正在聆听' : '语音填写') }}
+          {{ voiceRecorderTitle }}
         </div>
         <div class="voice-recorder-hint">
-          {{ voiceParsing ? '请稍候，大模型整理中' : '说出你要申请的事情和理由' }}
+          {{ voiceRecorderHint }}
         </div>
 
         <div class="voice-mic" :class="{ active: recording, parsing: voiceParsing }">
@@ -345,7 +448,12 @@ import {
   type ApplicationTemplate,
 } from '@/services/api'
 import { useUserStore } from '@/store/modules/user'
-import { startRecording, isRecordingSupported, type RecorderHandle } from '@/utils/wavRecorder'
+import {
+  startRecording,
+  getRecordingSupportStatus,
+  normalizeAudioBlobToWav,
+  type RecorderHandle,
+} from '@/utils/wavRecorder'
 
 const router = useRouter()
 const route = useRoute()
@@ -390,6 +498,7 @@ const templates = ref<ApplicationTemplate[]>([])
 const selectedTemplateName = ref('')
 const selectedApproverName = ref('')
 const uploadFileList = ref<any[]>([])
+const createMode = ref<'normal' | 'voice'>('normal')
 
 // 修改申请
 const showEditSheet = ref(false)
@@ -413,7 +522,13 @@ const newApplication = ref({
 const showVoiceSheet = ref(false)
 const recording = ref(false)
 const voiceParsing = ref(false)
+const voiceRecorderMode = ref<'fill' | 'request'>('fill')
 const voiceTranscript = ref('')
+const voiceRequestBlob = ref<Blob | null>(null)
+const voiceRequestAudioUrl = ref('')
+const voiceUploadFileList = ref<any[]>([])
+const voiceUploadConverting = ref(false)
+const voiceRetryBlobs = ref<Map<number, Blob>>(new Map())
 const recordSeconds = ref(0)
 let recorderHandle: RecorderHandle | null = null
 let recordTimer: ReturnType<typeof setInterval> | null = null
@@ -431,13 +546,58 @@ const clearRecordTimer = (): void => {
   }
 }
 
-// 入口：开始语音填写
-const startVoiceFill = async (): Promise<void> => {
-  if (!isRecordingSupported()) {
-    showToast('当前浏览器不支持录音，请手动填写')
+const voiceRecorderTitle = computed(() => {
+  if (voiceRecorderMode.value === 'request') {
+    return recording.value ? '正在录音' : '语音申请'
+  }
+  return voiceParsing.value ? '正在识别...' : (recording.value ? '正在聆听' : '语音填写')
+})
+
+const voiceRecorderHint = computed(() => {
+  if (voiceRecorderMode.value === 'request') {
+    return '说出要提交给审批人的语音内容'
+  }
+  return voiceParsing.value ? '请稍候，大模型整理中' : '说出你要申请的事情和理由'
+})
+
+const recordingSupport = computed(() => getRecordingSupportStatus())
+const recordingAvailable = computed(() => recordingSupport.value.supported)
+const voiceRequestValueText = computed(() => {
+  if (voiceRequestBlob.value) return '已准备'
+  return recordingAvailable.value ? '开始录音' : '录音不可用'
+})
+
+const clearVoiceRequestRecording = (clearUpload = true): void => {
+  if (voiceRequestAudioUrl.value) {
+    URL.revokeObjectURL(voiceRequestAudioUrl.value)
+  }
+  voiceRequestAudioUrl.value = ''
+  voiceRequestBlob.value = null
+  if (clearUpload) {
+    voiceUploadFileList.value = []
+  }
+}
+
+const setVoiceRequestRecording = (audioBlob: Blob, clearUpload = true): void => {
+  clearVoiceRequestRecording(clearUpload)
+  voiceRequestBlob.value = audioBlob
+  voiceRequestAudioUrl.value = URL.createObjectURL(audioBlob)
+}
+
+const getRecordingUnavailableMessage = (mode: 'fill' | 'request'): string => {
+  const message = getRecordingSupportStatus().message
+  return mode === 'request' ? `${message}，请上传音频文件` : `${message}，请手动填写`
+}
+
+const startVoiceRecording = async (mode: 'fill' | 'request'): Promise<void> => {
+  if (!getRecordingSupportStatus().supported) {
+    showToast(getRecordingUnavailableMessage(mode))
     return
   }
-  voiceTranscript.value = ''
+  voiceRecorderMode.value = mode
+  if (mode === 'fill') {
+    voiceTranscript.value = ''
+  }
   showVoiceSheet.value = true
   voiceParsing.value = false
   recordSeconds.value = 0
@@ -455,6 +615,48 @@ const startVoiceFill = async (): Promise<void> => {
     recording.value = false
     showVoiceSheet.value = false
     showToast(error?.message || '无法访问麦克风，请检查权限')
+  }
+}
+
+// 入口：开始语音填写
+const startVoiceFill = async (): Promise<void> => {
+  await startVoiceRecording('fill')
+}
+
+const startVoiceRequest = async (): Promise<void> => {
+  await startVoiceRecording('request')
+}
+
+const isAudioFile = (file: File): boolean => {
+  return file.type.startsWith('audio/') || /\.(wav|mp3|m4a|aac|mp4|webm|ogg)$/i.test(file.name)
+}
+
+const handleVoiceFileRead = async (fileItem: any): Promise<void> => {
+  const item = Array.isArray(fileItem) ? fileItem[0] : fileItem
+  const file = item?.file as File | undefined
+  if (!file) return
+
+  if (!isAudioFile(file)) {
+    voiceUploadFileList.value = []
+    showToast('请上传音频文件')
+    return
+  }
+
+  voiceUploadConverting.value = true
+  item.status = 'uploading'
+  item.message = '处理中'
+  try {
+    const wavBlob = await normalizeAudioBlobToWav(file)
+    setVoiceRequestRecording(wavBlob, false)
+    item.status = 'done'
+    item.message = '已处理'
+    showSuccessToast('音频已准备好')
+  } catch (error: any) {
+    item.status = 'failed'
+    item.message = '处理失败'
+    showToast(error?.message || '音频处理失败，请换一个文件')
+  } finally {
+    voiceUploadConverting.value = false
   }
 }
 
@@ -478,6 +680,13 @@ const finishRecording = async (): Promise<void> => {
   if (!audioBlob || audioBlob.size <= 44) {
     showVoiceSheet.value = false
     showToast('没有录到声音，请重试')
+    return
+  }
+
+  if (voiceRecorderMode.value === 'request') {
+    setVoiceRequestRecording(audioBlob)
+    showVoiceSheet.value = false
+    showSuccessToast('已录音')
     return
   }
 
@@ -508,6 +717,18 @@ const cancelVoice = (): void => {
   recording.value = false
   voiceParsing.value = false
   showVoiceSheet.value = false
+}
+
+const resetCreateForm = (): void => {
+  showCreateSheet.value = false
+  createMode.value = 'normal'
+  newApplication.value = { approverId: 0, title: '', description: '', remark: '', sendVoiceNotification: false }
+  selectedTemplateName.value = ''
+  selectedApproverName.value = ''
+  uploadFileList.value = []
+  voiceUploadFileList.value = []
+  voiceTranscript.value = ''
+  clearVoiceRequestRecording()
 }
 
 // 审批人选择列 - 使用后端返回的 otherUserId 和 otherUserName
@@ -583,6 +804,28 @@ const getStatusText = (status: number): string => {
 }
 
 // 格式化日期
+const shouldShowVoiceUploadStatus = (app: Application): boolean => {
+  return app.appType === 2 && app.status === 4 && !!app.voiceStatus
+}
+
+const getVoiceUploadStatusType = (voiceStatus?: number): any => {
+  const types: Record<number, string> = {
+    1: 'warning',
+    2: 'success',
+    3: 'danger'
+  }
+  return voiceStatus ? types[voiceStatus] : 'default'
+}
+
+const getVoiceUploadStatusText = (voiceStatus?: number): string => {
+  const texts: Record<number, string> = {
+    1: '上传中',
+    2: '就绪',
+    3: '失败'
+  }
+  return voiceStatus ? texts[voiceStatus] : ''
+}
+
 const formatDate = (date: string): string => {
   if (!date) return ''
   const d = new Date(date)
@@ -677,9 +920,57 @@ const onApproverConfirm = ({ selectedOptions }: any): void => {
 }
 
 // 提交申请
+const uploadVoiceAudioInBackground = async (applicationId: number, audio: Blob): Promise<void> => {
+  voiceRetryBlobs.value.set(applicationId, audio)
+  try {
+    await applicationAPI.uploadVoiceApplicationAudio(applicationId, audio)
+    voiceRetryBlobs.value.delete(applicationId)
+    showSuccessToast('Voice uploaded')
+  } catch (error: any) {
+    showToast(error.message || 'Voice upload failed')
+  } finally {
+    await onRefresh()
+  }
+}
+
+const retryVoiceUpload = (app: Application): void => {
+  const cachedAudio = voiceRetryBlobs.value.get(app.id)
+  if (cachedAudio) {
+    void uploadVoiceAudioInBackground(app.id, cachedAudio)
+    return
+  }
+
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'audio/*,.wav,.mp3,.m4a,.aac,.webm,.ogg'
+  input.onchange = async () => {
+    const file = input.files?.[0]
+    if (!file) return
+    if (!isAudioFile(file)) {
+      showToast('Please select an audio file')
+      return
+    }
+    try {
+      showLoadingToast({ message: 'Processing...', forbidClick: true })
+      const wavBlob = await normalizeAudioBlobToWav(file)
+      closeToast()
+      void uploadVoiceAudioInBackground(app.id, wavBlob)
+    } catch (error: any) {
+      closeToast()
+      showToast(error.message || 'Audio processing failed')
+    }
+  }
+  input.click()
+}
+
 const submitApplication = async (): Promise<void> => {
   if (!newApplication.value.approverId) {
     showToast('请选择审批人')
+    return
+  }
+
+  if (createMode.value === 'voice' && !voiceRequestBlob.value) {
+    showToast('请先录制或上传语音')
     return
   }
 
@@ -687,6 +978,17 @@ const submitApplication = async (): Promise<void> => {
   showLoadingToast({ message: '提交中...', forbidClick: true })
 
   try {
+    if (createMode.value === 'voice') {
+      const audio = voiceRequestBlob.value!
+      const draft = await applicationAPI.createVoiceApplicationDraft(newApplication.value.approverId)
+      closeToast()
+      showSuccessToast('语音申请创建成功')
+      resetCreateForm()
+      await onRefresh()
+      void uploadVoiceAudioInBackground(draft.id, audio)
+      return
+    }
+
     const result = await applicationAPI.createApplication(newApplication.value) as any
     const applicationId = result.id || result
 
@@ -707,12 +1009,7 @@ const submitApplication = async (): Promise<void> => {
     showSuccessToast('申请创建成功')
 
     // 重置表单
-    showCreateSheet.value = false
-    newApplication.value = { approverId: 0, title: '', description: '', remark: '', sendVoiceNotification: false }
-    selectedTemplateName.value = ''
-    selectedApproverName.value = ''
-    uploadFileList.value = []
-    voiceTranscript.value = ''
+    resetCreateForm()
 
     // 刷新列表
     onRefresh()
@@ -806,6 +1103,7 @@ const applyRoutePrefill = (): void => {
   const approverName = typeof route.query.approverName === 'string' ? route.query.approverName : ''
 
   if (title || description || remark || approverId) {
+    createMode.value = 'normal'
     newApplication.value.title = title
     newApplication.value.description = description
     newApplication.value.remark = remark
@@ -830,6 +1128,7 @@ onUnmounted(() => {
     recorderHandle.cancel()
     recorderHandle = null
   }
+  clearVoiceRequestRecording()
 })
 </script>
 
@@ -974,6 +1273,40 @@ onUnmounted(() => {
   font-size: 13px;
   color: #646566;
   line-height: 1.5;
+}
+
+.voice-request-preview {
+  background: #f7f8fa;
+}
+
+.voice-recording-tip {
+  background: #fff7e8;
+}
+
+.voice-recording-tip-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #d46b08;
+}
+
+.voice-recording-tip-text {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #8c6d1f;
+}
+
+.voice-request-audio {
+  width: 100%;
+  display: block;
+}
+
+.voice-request-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .voice-recorder {

@@ -28,8 +28,8 @@
           <van-cell-group inset class="approval-card" @click="goToDetail(app.id)">
             <div class="card-header">
               <div class="card-title">
-                <van-icon name="description" color="#4f46e5" />
-                <span>{{ app.title }}</span>
+                <van-icon :name="app.appType === 2 ? 'volume-o' : 'description'" color="#4f46e5" />
+                <span>{{ app.title || (app.appType === 2 ? '语音申请' : '') }}</span>
               </div>
               <van-tag type="warning" size="medium">待审批</van-tag>
             </div>
@@ -41,9 +41,9 @@
                 <span class="value">{{ app.applicantName || app.applicantUsername }}</span>
               </div>
               <div class="info-row description">
-                <van-icon name="notes-o" size="14" />
+                <van-icon :name="app.appType === 2 ? 'volume-o' : 'notes-o'" size="14" />
                 <span class="label">说明：</span>
-                <span class="value">{{ app.description || '无' }}</span>
+                <span class="value">{{ app.description || (app.appType === 2 ? '语音申请，点击详情播放' : '无') }}</span>
               </div>
               <div class="info-row">
                 <van-icon name="clock-o" size="14" />
@@ -164,6 +164,7 @@ interface Application {
   id: number
   title: string
   description: string
+  appType?: number
   applicantId: number
   applicantName?: string
   applicantUsername?: string

@@ -23,6 +23,10 @@ export interface Application {
   approverId: number
   title: string
   description: string
+  appType?: number
+  voiceTranscript?: string
+  voiceStatus?: number
+  voiceUploadError?: string
   remark?: string
   status: number
   rejectReason?: string
@@ -186,6 +190,66 @@ export interface MimoConfigResponse {
   apiKeyMasked?: string
 }
 
+export interface EmailSettingsResponse {
+  host?: string
+  port?: number
+  username?: string
+  fromEmail?: string
+  sslEnabled?: boolean
+  passwordConfigured?: boolean
+  passwordMasked?: string
+}
+
+export interface EmailSettingsUpdateRequest {
+  host?: string
+  port?: number
+  username?: string
+  fromEmail?: string
+  password?: string
+  sslEnabled?: boolean
+}
+
+export interface VoiceModelSettingsResponse {
+  enabled?: boolean
+  provider?: string
+  asrBaseUrl?: string
+  asrAuthScheme?: string
+  asrApiKeyHeader?: string
+  asrModel?: string
+  asrApiKeyConfigured?: boolean
+  asrApiKeyMasked?: string
+  chatBaseUrl?: string
+  chatAuthScheme?: string
+  chatApiKeyHeader?: string
+  chatModel?: string
+  chatApiKeyConfigured?: boolean
+  chatApiKeyMasked?: string
+  baseUrl?: string
+  authScheme?: string
+  apiKeyHeader?: string
+  apiKeyConfigured?: boolean
+  apiKeyMasked?: string
+}
+
+export interface VoiceModelSettingsUpdateRequest {
+  enabled?: boolean
+  provider?: string
+  asrBaseUrl?: string
+  asrAuthScheme?: string
+  asrApiKeyHeader?: string
+  asrApiKey?: string
+  asrModel?: string
+  chatBaseUrl?: string
+  chatAuthScheme?: string
+  chatApiKeyHeader?: string
+  chatApiKey?: string
+  chatModel?: string
+  baseUrl?: string
+  authScheme?: string
+  apiKeyHeader?: string
+  apiKey?: string
+}
+
 // 认证相关 API
 export const authAPI = {
   register(data: RegisterRequest) {
@@ -221,6 +285,20 @@ export const applicationAPI = {
   createApplication(data: ApplicationCreateRequest) {
     return http.post<Application>('/applications', data)
   },
+  createVoiceApplicationDraft(approverId: number) {
+    return http.post<Application>('/applications/voice', { approverId })
+  },
+  uploadVoiceApplicationAudio(id: number, audio: Blob) {
+    const formData = new FormData()
+    formData.append('file', audio, 'voice.wav')
+    return http.post<void>(`/applications/${id}/voice-audio`, formData)
+  },
+  createVoiceApplication(approverId: number, audio: Blob) {
+    const formData = new FormData()
+    formData.append('approverId', String(approverId))
+    formData.append('file', audio, 'voice.wav')
+    return http.post<Application>('/applications/voice', formData)
+  },
   updateApplication(id: number, data: ApplicationCreateRequest) {
     return http.put<Application>(`/applications/${id}`, data)
   },
@@ -237,6 +315,9 @@ export const applicationAPI = {
     formData.append('language', language)
     return http.post<VoiceParseResult>('/applications/voice-parse', formData)
   },
+  transcribeVoiceApplication(id: number, language: 'auto' | 'zh' | 'en' = 'zh') {
+    return http.post<string>(`/applications/${id}/transcribe-voice`, null, { params: { language } })
+  },
   getMyApplications(params: PaginationParams & { status?: number }) {
     return http.get<PageApplication>('/applications/my-applications', { params })
   },
@@ -249,10 +330,26 @@ export const applicationAPI = {
   getApplicationDetail(id: number) {
     return http.get<Application>(`/applications/${id}`)
   },
-  approveApplication(id: number, data: ApplicationApprovalRequest) {
+  approveApplication(id: number, data: ApplicationApprovalRequest, voiceReply?: Blob) {
+    if (voiceReply) {
+      const formData = new FormData()
+      if (data.approvalDetail) {
+        formData.append('approvalDetail', data.approvalDetail)
+      }
+      formData.append('file', voiceReply, 'reply.wav')
+      return http.post<void>(`/applications/${id}/approve`, formData)
+    }
     return http.post<void>(`/applications/${id}/approve`, data)
   },
-  rejectApplication(id: number, data: ApplicationApprovalRequest) {
+  rejectApplication(id: number, data: ApplicationApprovalRequest, voiceReply?: Blob) {
+    if (voiceReply) {
+      const formData = new FormData()
+      if (data.approvalDetail) {
+        formData.append('approvalDetail', data.approvalDetail)
+      }
+      formData.append('file', voiceReply, 'reply.wav')
+      return http.post<void>(`/applications/${id}/reject`, formData)
+    }
     return http.post<void>(`/applications/${id}/reject`, data)
   },
 }
@@ -363,6 +460,18 @@ export const adminAPI = {
     return http.post<void>(`/admin/applications/${applicationId}/reject`, null, {
       params: { rejectReason }
     })
+  },
+  getEmailSettings() {
+    return http.get<EmailSettingsResponse>('/admin/settings/email')
+  },
+  updateEmailSettings(data: EmailSettingsUpdateRequest) {
+    return http.put<EmailSettingsResponse>('/admin/settings/email', data)
+  },
+  getVoiceSettings() {
+    return http.get<VoiceModelSettingsResponse>('/admin/settings/voice')
+  },
+  updateVoiceSettings(data: VoiceModelSettingsUpdateRequest) {
+    return http.put<VoiceModelSettingsResponse>('/admin/settings/voice', data)
   },
   getMimoConfig() {
     return http.get<MimoConfigResponse>('/admin/mimo/config')

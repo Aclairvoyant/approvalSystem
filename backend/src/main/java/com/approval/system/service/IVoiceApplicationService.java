@@ -16,4 +16,15 @@ public interface IVoiceApplicationService {
      * @return 解析结果
      */
     VoiceParseResult parseVoice(MultipartFile audio, String language);
+
+    /**
+     * 仅执行语音转文字，不抽取申请字段。
+     *
+     * @param audioBytes  音频字节
+     * @param contentType 音频 MIME 类型
+     * @param filename    原始文件名
+     * @param language    语种，可选值 auto/zh/en，为空时按 zh 处理
+     * @return ASR 转写文本
+     */
+    String transcribe(byte[] audioBytes, String contentType, String filename, String language);
 }

@@ -44,9 +44,13 @@ CREATE TABLE applications (
   id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '申请ID',
   applicant_id BIGINT NOT NULL COMMENT '申请人ID',
   approver_id BIGINT NOT NULL COMMENT '审批人ID',
+  app_type TINYINT NOT NULL DEFAULT 1 COMMENT '申请类型：1=普通申请，2=语音申请',
   title VARCHAR(255) NOT NULL COMMENT '事项标题',
   description LONGTEXT COMMENT '事项描述/理由',
   remark VARCHAR(500) COMMENT '备注',
+  voice_transcript LONGTEXT COMMENT '语音申请ASR转写文本',
+  voice_status TINYINT NOT NULL DEFAULT 0 COMMENT '语音上传状态: 0=none,1=uploading,2=ready,3=failed',
+  voice_upload_error VARCHAR(500) COMMENT '语音上传失败信息',
   status TINYINT DEFAULT 1 COMMENT '申请状态：1=待审批，2=已批准，3=已驳回，4=草稿',
   reject_reason VARCHAR(500) COMMENT '驳回原因',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -96,6 +100,20 @@ CREATE TABLE operation_logs (
   INDEX idx_application_id (application_id),
   INDEX idx_created_at (created_at)
 ) COMMENT='操作日志表';
+
+-- 系统运行配置表（后台可编辑的邮件与语音模型配置）
+CREATE TABLE system_settings (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '配置ID',
+  setting_key VARCHAR(100) NOT NULL COMMENT '配置键',
+  setting_value TEXT COMMENT '配置值',
+  `sensitive` TINYINT NOT NULL DEFAULT 0 COMMENT '是否敏感配置',
+  description VARCHAR(255) COMMENT '配置说明',
+  updated_by BIGINT COMMENT '最后更新管理员ID',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  UNIQUE KEY uk_system_settings_key (setting_key),
+  INDEX idx_system_settings_updated_at (updated_at)
+) COMMENT='系统运行配置表';
 
 -- 申请附件表（存储图片等附件）
 CREATE TABLE application_attachments (

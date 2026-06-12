@@ -1,0 +1,11 @@
+{"path":"backend/src/main/java/com/approval/system/dto/ApplicationApprovalRequest.java","reason":"Approval request DTO currently only supports text approvalDetail."}
+{"path":"backend/src/main/java/com/approval/system/controller/ApplicationController.java","reason":"User-facing approve/reject endpoints call ApplicationService approve/reject."}
+{"path":"backend/src/main/java/com/approval/system/service/impl/ApplicationServiceImpl.java","reason":"Core approval/rejection state transition and email notification logic."}
+{"path":"backend/src/main/java/com/approval/system/entity/ApprovalAttachment.java","reason":"Existing approval attachment table has operationLogId field available for binding attachments to approval/rejection logs."}
+{"path":"backend/src/main/java/com/approval/system/service/impl/ApprovalAttachmentServiceImpl.java","reason":"Existing approval attachment upload/list/delete behavior."}
+{"path":"backend/src/main/java/com/approval/system/service/impl/EmailServiceImpl.java","reason":"Approval/rejection email templates need to mention voice replies."}
+{"path":"frontend/src/pages/mobile/ApplicationDetail.vue","reason":"Mobile approval form already uploads approval attachments and displays application voice audio."}
+{"path":"frontend/src/pages/mobile/Approvals.vue","reason":"Mobile quick approve/reject dialogs need optional voice reply support or deliberate scope exclusion."}
+{"path":"frontend/src/services/api.ts","reason":"Frontend DTO/API wrapper must carry voice reply attachment IDs or upload flow."}
+{"path":"frontend/src/pages/mobile/Applications.vue","reason":"Voice application creation currently awaits createVoiceApplication with the full WAV blob before closing the submit flow."}
+{"path":"backend/src/main/java/com/approval/system/service/impl/ApplicationAttachmentServiceImpl.java","reason":"Application audio upload goes through OSS synchronously before the attachment row is saved."}

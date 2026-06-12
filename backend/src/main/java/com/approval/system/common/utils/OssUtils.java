@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -51,7 +52,7 @@ public class OssUtils {
                             isAllowed = true;
                             break;
                         }
-                    } else if (contentType.equals(trimmedType) || contentType.contains(trimmedType)) {
+                    } else if (contentType.equals(trimmedType)) {
                         isAllowed = true;
                         break;
                     }
@@ -95,6 +96,67 @@ public class OssUtils {
             log.error("文件上传失败", e);
             throw new RuntimeException("文件上传失败: " + e.getMessage());
         }
+    }
+
+    public String uploadBytes(byte[] data, String originalFilename, String contentType) {
+        try {
+            if (data == null || data.length == 0) {
+                throw new RuntimeException("文件内容不能为空");
+            }
+            Long maxFileSize = ossProperties.getMaxFileSize();
+            if (maxFileSize != null && maxFileSize > 0 && data.length > maxFileSize) {
+                throw new RuntimeException("文件大小超过限制");
+            }
+
+            String safeContentType = contentType == null ? "application/octet-stream" : contentType;
+            validateAllowedContentType(safeContentType);
+            String ossKey = generateOssKey(Objects.requireNonNull(originalFilename));
+
+            OSS ossClient = new OSSClientBuilder().build(
+                    ossProperties.getEndpoint(),
+                    ossProperties.getAccessKeyId(),
+                    ossProperties.getAccessKeySecret()
+            );
+
+            try {
+                PutObjectRequest putObjectRequest = new PutObjectRequest(
+                        ossProperties.getBucketName(),
+                        ossKey,
+                        new ByteArrayInputStream(data)
+                );
+
+                ossClient.putObject(putObjectRequest);
+                String fileUrl = ossProperties.getBucketUrl() + "/" + ossKey;
+                log.info("ossKey: {}, URL: {}", ossKey, fileUrl);
+                return fileUrl;
+            } finally {
+                ossClient.shutdown();
+            }
+        } catch (Exception e) {
+            log.error("文件上传失败", e);
+            throw new RuntimeException("文件上传失败: " + e.getMessage());
+        }
+    }
+
+    private void validateAllowedContentType(String contentType) {
+        String allowedTypesStr = ossProperties.getAllowedFileTypes();
+        if (allowedTypesStr == null || allowedTypesStr.isEmpty()) {
+            return;
+        }
+        String[] allowedTypes = allowedTypesStr.split(",");
+        for (String type : allowedTypes) {
+            String trimmedType = type.trim();
+            if (trimmedType.endsWith("/*")) {
+                String prefix = trimmedType.substring(0, trimmedType.length() - 1);
+                if (contentType.startsWith(prefix)) {
+                    return;
+                }
+            } else if (contentType.equals(trimmedType)) {
+                return;
+            }
+        }
+        log.warn("contentType: {}, allowedTypesStr? {}", contentType, allowedTypesStr);
+        throw new RuntimeException("contentType: " + contentType);
     }
 
     /**

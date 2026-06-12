@@ -23,6 +23,11 @@ public class ApprovalAttachmentServiceImpl extends ServiceImpl<ApprovalAttachmen
 
     @Override
     public ApprovalAttachment uploadApprovalAttachment(Long applicationId, Long operatorId, MultipartFile file) {
+        return uploadApprovalAttachment(applicationId, operatorId, null, file);
+    }
+
+    @Override
+    public ApprovalAttachment uploadApprovalAttachment(Long applicationId, Long operatorId, Long operationLogId, MultipartFile file) {
         try {
             // 上传文件到OSS
             String fileUrl = ossUtils.uploadFile(file);
@@ -30,6 +35,7 @@ public class ApprovalAttachmentServiceImpl extends ServiceImpl<ApprovalAttachmen
             // 保存附件记录
             ApprovalAttachment attachment = ApprovalAttachment.builder()
                     .applicationId(applicationId)
+                    .operationLogId(operationLogId)
                     .operatorId(operatorId)
                     .fileName(file.getOriginalFilename())
                     .fileUrl(fileUrl)

@@ -2,7 +2,9 @@ package com.approval.system.service.impl;
 
 import cn.hutool.extra.mail.MailAccount;
 import cn.hutool.extra.mail.MailUtil;
+import com.approval.system.dto.EffectiveEmailSettings;
 import com.approval.system.service.IEmailService;
+import com.approval.system.service.ISystemSettingService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,6 +22,9 @@ public class EmailServiceImpl implements IEmailService {
     @Autowired
     private CacheManager cacheManager;
 
+    @Autowired(required = false)
+    private ISystemSettingService systemSettingService;
+
     @Value("${spring.mail.host}")
     private String mailHost;
 
@@ -32,6 +37,9 @@ public class EmailServiceImpl implements IEmailService {
     @Value("${spring.mail.password}")
     private String mailPassword;
 
+    @Value("${spring.mail.properties.mail.smtp.ssl.enable:true}")
+    private Boolean mailSslEnabled;
+
     private static final int CODE_LENGTH = 6;
     private static final int RATE_LIMIT_SECONDS = 60; // 60秒内只能发送一次
 
@@ -39,16 +47,32 @@ public class EmailServiceImpl implements IEmailService {
      * 创建邮件账号配置
      */
     private MailAccount createMailAccount() {
+        EffectiveEmailSettings settings = resolveEmailSettings();
         MailAccount account = new MailAccount();
-        account.setHost(mailHost);
-        account.setPort(mailPort);
+        account.setHost(settings.getHost());
+        account.setPort(settings.getPort());
         account.setAuth(true);
-        account.setUser(fromEmail);
-        account.setPass(mailPassword);
-        account.setFrom(fromEmail);
-        account.setSslEnable(true);
+        account.setUser(settings.getUsername());
+        account.setPass(settings.getPassword());
+        account.setFrom(settings.getFromEmail());
+        account.setSslEnable(Boolean.TRUE.equals(settings.getSslEnabled()));
         account.setCharset(Charset.defaultCharset());
         return account;
+    }
+
+    private EffectiveEmailSettings resolveEmailSettings() {
+        if (systemSettingService != null) {
+            return systemSettingService.getEffectiveEmailSettings();
+        }
+
+        return EffectiveEmailSettings.builder()
+                .host(mailHost)
+                .port(mailPort)
+                .username(fromEmail)
+                .fromEmail(fromEmail)
+                .password(mailPassword)
+                .sslEnabled(mailSslEnabled)
+                .build();
     }
 
     @Override
@@ -220,7 +244,27 @@ public class EmailServiceImpl implements IEmailService {
     /**
      * 构建验证码邮件内容
      */
+    private String escapeHtml(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
+    }
+
+    private String escapeHtmlPreservingLineBreaks(String value) {
+        return escapeHtml(value)
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
+                .replace("\n", "<br>");
+    }
+
     private String buildVerificationCodeEmail(String code) {
+        String safeCode = escapeHtml(code);
         return "<!DOCTYPE html>" +
                 "<html>" +
                 "<head>" +
@@ -245,13 +289,13 @@ public class EmailServiceImpl implements IEmailService {
                 "<p>您好，</p>" +
                 "<p>您正在进行邮箱验证，验证码为：</p>" +
                 "<div class=\"code-box\">" +
-                "<div class=\"code\">" + code + "</div>" +
+                "<div class=\"code\">" + safeCode + "</div>" +
                 "</div>" +
                 "<p class=\"notice\">验证码有效期为5分钟，请及时使用。如非本人操作，请忽略此邮件。</p>" +
                 "</div>" +
                 "<div class=\"footer\">" +
                 "<p>此邮件由系统自动发送，请勿回复。</p>" +
-                "<p>&copy; 2025 审批管理系统</p>" +
+                "<p>&copy; 2026 审批管理系统</p>" +
                 "</div>" +
                 "</div>" +
                 "</body>" +
@@ -262,6 +306,8 @@ public class EmailServiceImpl implements IEmailService {
      * 构建申请通知邮件内容
      */
     private String buildApplicationNotificationEmail(String applicantName, String title, Long applicationId) {
+        String safeApplicantName = escapeHtml(applicantName);
+        String safeTitle = escapeHtml(title);
         return "<!DOCTYPE html>" +
                 "<html>" +
                 "<head>" +
@@ -288,11 +334,11 @@ public class EmailServiceImpl implements IEmailService {
                 "<p>您收到了一个新的待审批申请，详情如下：</p>" +
                 "<div class=\"info-box\">" +
                 "<div class=\"info-label\">申请人</div>" +
-                "<div class=\"info-value\">" + applicantName + "</div>" +
+                "<div class=\"info-value\">" + safeApplicantName + "</div>" +
                 "</div>" +
                 "<div class=\"info-box\">" +
                 "<div class=\"info-label\">申请事项</div>" +
-                "<div class=\"info-value\">" + title + "</div>" +
+                "<div class=\"info-value\">" + safeTitle + "</div>" +
                 "</div>" +
                 "<div class=\"info-box\">" +
                 "<div class=\"info-label\">申请编号</div>" +
@@ -302,7 +348,7 @@ public class EmailServiceImpl implements IEmailService {
                 "</div>" +
                 "<div class=\"footer\">" +
                 "<p>此邮件由系统自动发送，请勿回复。</p>" +
-                "<p>&copy; 2025 审批管理系统</p>" +
+                "<p>&copy; 2026 审批管理系统</p>" +
                 "</div>" +
                 "</div>" +
                 "</body>" +
@@ -314,6 +360,9 @@ public class EmailServiceImpl implements IEmailService {
      */
     private String buildApprovalNotificationEmail(String applicantName, String approverName,
                                                   String title, String approvalDetail, Long applicationId) {
+        String safeApplicantName = escapeHtml(applicantName);
+        String safeApproverName = escapeHtml(approverName);
+        String safeTitle = escapeHtml(title);
         String detail = approvalDetail != null && !approvalDetail.isEmpty() ? approvalDetail : "无";
         return "<!DOCTYPE html>" +
                 "<html>" +
@@ -339,14 +388,14 @@ public class EmailServiceImpl implements IEmailService {
                 "<h1>✓ 申请已批准</h1>" +
                 "</div>" +
                 "<div class=\"content\">" +
-                "<p>您好，" + applicantName + "！</p>" +
+                "<p>您好，" + safeApplicantName + "！</p>" +
                 "<p>恭喜您，您提交的申请已获得批准。</p>" +
                 "<div class=\"stamp\">" +
                 "<div class=\"stamp-text\">已批准</div>" +
                 "</div>" +
                 "<div class=\"info-box\">" +
                 "<div class=\"info-label\">申请标题</div>" +
-                "<div class=\"info-value\">" + title + "</div>" +
+                "<div class=\"info-value\">" + safeTitle + "</div>" +
                 "</div>" +
                 "<div class=\"info-box\">" +
                 "<div class=\"info-label\">申请编号</div>" +
@@ -354,17 +403,17 @@ public class EmailServiceImpl implements IEmailService {
                 "</div>" +
                 "<div class=\"info-box\">" +
                 "<div class=\"info-label\">审批人</div>" +
-                "<div class=\"info-value\">" + approverName + "</div>" +
+                "<div class=\"info-value\">" + safeApproverName + "</div>" +
                 "</div>" +
                 "<div class=\"info-box\">" +
                 "<div class=\"info-label\">审批意见</div>" +
-                "<div class=\"info-value\">" + detail + "</div>" +
+                "<div class=\"info-value\">" + escapeHtmlPreservingLineBreaks(detail) + "</div>" +
                 "</div>" +
                 "<p style=\"margin-top: 20px;\">请登录系统查看详细信息。</p>" +
                 "</div>" +
                 "<div class=\"footer\">" +
                 "<p>此邮件由系统自动发送，请勿回复。</p>" +
-                "<p>&copy; 2025 审批管理系统</p>" +
+                "<p>&copy; 2026 审批管理系统</p>" +
                 "</div>" +
                 "</div>" +
                 "</body>" +
@@ -376,6 +425,9 @@ public class EmailServiceImpl implements IEmailService {
      */
     private String buildRejectionNotificationEmail(String applicantName, String approverName,
                                                    String title, String rejectReason, Long applicationId) {
+        String safeApplicantName = escapeHtml(applicantName);
+        String safeApproverName = escapeHtml(approverName);
+        String safeTitle = escapeHtml(title);
         String reason = rejectReason != null && !rejectReason.isEmpty() ? rejectReason : "无";
         return "<!DOCTYPE html>" +
                 "<html>" +
@@ -401,14 +453,14 @@ public class EmailServiceImpl implements IEmailService {
                 "<h1>✗ 申请已驳回</h1>" +
                 "</div>" +
                 "<div class=\"content\">" +
-                "<p>您好，" + applicantName + "！</p>" +
+                "<p>您好，" + safeApplicantName + "！</p>" +
                 "<p>很遗憾，您提交的申请未能通过审批。</p>" +
                 "<div class=\"stamp\">" +
                 "<div class=\"stamp-text\">已驳回</div>" +
                 "</div>" +
                 "<div class=\"info-box\">" +
                 "<div class=\"info-label\">申请标题</div>" +
-                "<div class=\"info-value\">" + title + "</div>" +
+                "<div class=\"info-value\">" + safeTitle + "</div>" +
                 "</div>" +
                 "<div class=\"info-box\">" +
                 "<div class=\"info-label\">申请编号</div>" +
@@ -416,17 +468,17 @@ public class EmailServiceImpl implements IEmailService {
                 "</div>" +
                 "<div class=\"info-box\">" +
                 "<div class=\"info-label\">审批人</div>" +
-                "<div class=\"info-value\">" + approverName + "</div>" +
+                "<div class=\"info-value\">" + safeApproverName + "</div>" +
                 "</div>" +
                 "<div class=\"info-box\">" +
                 "<div class=\"info-label\">驳回原因</div>" +
-                "<div class=\"info-value\">" + reason + "</div>" +
+                "<div class=\"info-value\">" + escapeHtmlPreservingLineBreaks(reason) + "</div>" +
                 "</div>" +
                 "<p style=\"margin-top: 20px;\">如有疑问，请联系审批人了解详情。</p>" +
                 "</div>" +
                 "<div class=\"footer\">" +
                 "<p>此邮件由系统自动发送，请勿回复。</p>" +
-                "<p>&copy; 2025 审批管理系统</p>" +
+                "<p>&copy; 2026 审批管理系统</p>" +
                 "</div>" +
                 "</div>" +
                 "</body>" +

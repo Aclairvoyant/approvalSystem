@@ -1,13 +1,17 @@
 package com.approval.system.controller;
 
 import com.approval.system.common.response.ApiResponse;
-import com.approval.system.config.MiMoConfig;
+import com.approval.system.dto.EmailSettingsResponse;
+import com.approval.system.dto.EmailSettingsUpdateRequest;
 import com.approval.system.dto.MimoConfigResponse;
+import com.approval.system.dto.VoiceModelSettingsResponse;
+import com.approval.system.dto.VoiceModelSettingsUpdateRequest;
 import com.approval.system.entity.Application;
 import com.approval.system.entity.Notification;
 import com.approval.system.entity.User;
 import com.approval.system.service.IApplicationService;
 import com.approval.system.service.INotificationService;
+import com.approval.system.service.ISystemSettingService;
 import com.approval.system.service.IUserRelationService;
 import com.approval.system.service.IUserService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -16,7 +20,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -40,7 +43,7 @@ public class AdminController {
     private INotificationService notificationService;
 
     @Autowired
-    private MiMoConfig miMoConfig;
+    private ISystemSettingService systemSettingService;
 
     /**
      * 获取仪表盘统计数据
@@ -425,6 +428,84 @@ public class AdminController {
     }
 
     /**
+     * 获取邮件发送配置（管理员用）
+     */
+    @GetMapping("/settings/email")
+    public ApiResponse<EmailSettingsResponse> getEmailSettings() {
+        try {
+            if (!isCurrentUserAdmin()) {
+                return ApiResponse.fail(403, "没有管理员权限");
+            }
+
+            return ApiResponse.success(systemSettingService.getEmailSettings());
+        } catch (Exception e) {
+            log.error("获取邮件配置失败", e);
+            return ApiResponse.fail(500, "获取邮件配置失败");
+        }
+    }
+
+    /**
+     * 更新邮件发送配置（管理员用）
+     */
+    @PutMapping("/settings/email")
+    public ApiResponse<EmailSettingsResponse> updateEmailSettings(@RequestBody EmailSettingsUpdateRequest request) {
+        try {
+            if (!isCurrentUserAdmin()) {
+                return ApiResponse.fail(403, "没有管理员权限");
+            }
+
+            Long adminId = getCurrentUserId();
+            EmailSettingsResponse response = systemSettingService.updateEmailSettings(request, adminId);
+            log.info("管理员更新邮件发送配置，adminId: {}", adminId);
+            return ApiResponse.success(response);
+        } catch (IllegalArgumentException e) {
+            return ApiResponse.fail(400, e.getMessage());
+        } catch (Exception e) {
+            log.error("更新邮件配置失败", e);
+            return ApiResponse.fail(500, "更新邮件配置失败");
+        }
+    }
+
+    /**
+     * 获取语音大模型配置（管理员用）
+     */
+    @GetMapping("/settings/voice")
+    public ApiResponse<VoiceModelSettingsResponse> getVoiceModelSettings() {
+        try {
+            if (!isCurrentUserAdmin()) {
+                return ApiResponse.fail(403, "没有管理员权限");
+            }
+
+            return ApiResponse.success(systemSettingService.getVoiceModelSettings());
+        } catch (Exception e) {
+            log.error("获取语音大模型配置失败", e);
+            return ApiResponse.fail(500, "获取语音大模型配置失败");
+        }
+    }
+
+    /**
+     * 更新语音大模型配置（管理员用）
+     */
+    @PutMapping("/settings/voice")
+    public ApiResponse<VoiceModelSettingsResponse> updateVoiceModelSettings(@RequestBody VoiceModelSettingsUpdateRequest request) {
+        try {
+            if (!isCurrentUserAdmin()) {
+                return ApiResponse.fail(403, "没有管理员权限");
+            }
+
+            Long adminId = getCurrentUserId();
+            VoiceModelSettingsResponse response = systemSettingService.updateVoiceModelSettings(request, adminId);
+            log.info("管理员更新语音大模型配置，adminId: {}", adminId);
+            return ApiResponse.success(response);
+        } catch (IllegalArgumentException e) {
+            return ApiResponse.fail(400, e.getMessage());
+        } catch (Exception e) {
+            log.error("更新语音大模型配置失败", e);
+            return ApiResponse.fail(500, "更新语音大模型配置失败");
+        }
+    }
+
+    /**
      * 获取 MiMo 配置（管理员用）
      */
     @GetMapping("/mimo/config")
@@ -434,21 +515,20 @@ public class AdminController {
                 return ApiResponse.fail(403, "没有管理员权限");
             }
 
-            String apiKey = miMoConfig.getApiKey();
-            boolean apiKeyConfigured = isConfiguredApiKey(apiKey);
+            VoiceModelSettingsResponse voiceSettings = systemSettingService.getVoiceModelSettings();
             MimoConfigResponse response = MimoConfigResponse.builder()
-                    .enabled(miMoConfig.getEnabled())
-                    .baseUrl(miMoConfig.getBaseUrl())
-                    .asrModel(miMoConfig.getAsrModel())
-                    .chatModel(miMoConfig.getChatModel())
-                    .apiKeyConfigured(apiKeyConfigured)
-                    .apiKeyMasked(apiKeyConfigured ? maskApiKey(apiKey) : "")
+                    .enabled(voiceSettings.getEnabled())
+                    .baseUrl(voiceSettings.getAsrBaseUrl())
+                    .asrModel(voiceSettings.getAsrModel())
+                    .chatModel(voiceSettings.getChatModel())
+                    .apiKeyConfigured(voiceSettings.getAsrApiKeyConfigured())
+                    .apiKeyMasked(voiceSettings.getAsrApiKeyMasked())
                     .build();
 
             return ApiResponse.success(response);
         } catch (Exception e) {
             log.error("获取 MiMo 配置失败", e);
-            return ApiResponse.fail(500, e.getMessage());
+            return ApiResponse.fail(500, "获取 MiMo 配置失败");
         }
     }
 
@@ -478,32 +558,4 @@ public class AdminController {
         return user != null && user.isAdmin();
     }
 
-    private boolean isConfiguredApiKey(String apiKey) {
-        if (!StringUtils.hasText(apiKey)) {
-            return false;
-        }
-
-        String normalized = apiKey.trim().toLowerCase();
-        return !"your-mimo-api-key".equals(normalized)
-                && !"your-api-key".equals(normalized)
-                && !"your_api_key".equals(normalized)
-                && !"replace-with-your-mimo-api-key".equals(normalized)
-                && !normalized.contains("请替换");
-    }
-
-    private String maskApiKey(String apiKey) {
-        if (!isConfiguredApiKey(apiKey)) {
-            return "";
-        }
-
-        String trimmed = apiKey.trim();
-        int length = trimmed.length();
-        if (length <= 3) {
-            return "***";
-        }
-        if (length <= 8) {
-            return trimmed.substring(0, 1) + "***" + trimmed.substring(length - 1);
-        }
-        return trimmed.substring(0, 4) + "..." + trimmed.substring(length - 3);
-    }
 }

@@ -27,6 +27,9 @@ public class Application {
     @TableField("approver_id")
     private Long approverId;
 
+    @TableField("app_type")
+    private Integer appType;
+
     @TableField("title")
     private String title;
 
@@ -35,6 +38,15 @@ public class Application {
 
     @TableField("remark")
     private String remark;
+
+    @TableField("voice_transcript")
+    private String voiceTranscript;
+
+    @TableField("voice_status")
+    private Integer voiceStatus;
+
+    @TableField("voice_upload_error")
+    private String voiceUploadError;
 
     @TableField("status")
     private Integer status;
