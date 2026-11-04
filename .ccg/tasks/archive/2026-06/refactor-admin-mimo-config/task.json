@@ -1,0 +1,12 @@
+{
+  "id": "refactor-admin-mimo-config",
+  "title": "重构并美化后台管理页面并支持查看 Mimo 用量等配置",
+  "status": "completed",
+  "complexity": "L+",
+  "risk": "medium",
+  "domain": "fullstack",
+  "currentPhase": "completed",
+  "nextAction": "按用户要求终止本次 CCG task 并归档",
+  "createdAt": "2026-06-05T06:29:42Z",
+  "branch": "master"
+}

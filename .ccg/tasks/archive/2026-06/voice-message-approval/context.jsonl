@@ -1,0 +1,11 @@
+{"file":"backend/src/main/java/com/approval/system/controller/ApplicationController.java","reason":"现有申请创建接口和 /voice-parse 入口；新语音消息申请需要在这里增加创建/转写边界或复用现有服务"}
+{"file":"backend/src/main/java/com/approval/system/service/impl/VoiceApplicationServiceImpl.java","reason":"已有 MiMo ASR + 字段抽取实现；新功能应复用 ASR 但不强制抽取标题/描述"}
+{"file":"backend/src/main/java/com/approval/system/entity/Application.java","reason":"申请实体目前只有普通标题/描述/备注；需要判断是否增加语音消息元数据字段"}
+{"file":"backend/src/main/java/com/approval/system/service/impl/ApplicationServiceImpl.java","reason":"申请创建、状态流转、通知和详情查询的核心服务"}
+{"file":"backend/src/main/java/com/approval/system/service/impl/ApplicationAttachmentServiceImpl.java","reason":"现有申请附件上传到 OSS 的实现，语音文件保存可复用但要补类型和标识"}
+{"file":"backend/src/main/resources/db/migration","reason":"已有 Flyway migration 目录；若扩展 applications 字段，应新增迁移而不是只改 database.sql"}
+{"file":"frontend/src/pages/mobile/Applications.vue","reason":"移动端创建申请页已包含语音填写录音入口；新功能要增加语音消息式申请入口"}
+{"file":"frontend/src/pages/mobile/ApplicationDetail.vue","reason":"审批人查看详情、附件播放、语音转文字按钮应放在详情页"}
+{"file":"frontend/src/pages/mobile/Approvals.vue","reason":"待审批列表需要给语音申请加识别标识和摘要"}
+{"file":"frontend/src/utils/wavRecorder.ts","reason":"已有 16kHz WAV 录音工具，可复用为语音消息录制"}
+{"file":"frontend/src/services/api.ts","reason":"前端 API 类型和 application/attachment 调用集中定义"}

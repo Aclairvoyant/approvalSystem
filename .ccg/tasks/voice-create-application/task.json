@@ -1,0 +1,12 @@
+{
+  "id": "voice-create-application",
+  "title": "语音口述申请内容，调用小米 MiMo 自动填写并提交申请",
+  "status": "completed",
+  "strategy": "full-collaborate",
+  "currentPhase": "done",
+  "nextAction": "功能已实现并通过前后端编译，待用户填入 MiMo API Key 后联调",
+  "gate": null,
+  "branch": "master",
+  "scope": "voice-create-application",
+  "createdAt": "2026-06-05T14:02:36+0800"
+}
