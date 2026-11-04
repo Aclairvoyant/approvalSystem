@@ -173,30 +173,33 @@ public class FlightChessEngineImpl implements IFlightChessEngine {
 
     @Override
     public boolean isGameOver(GameResponse game) {
-        // 检查玩家1是否所有棋子到达终点
-        boolean player1Wins = game.getPlayer1Pieces().stream()
-                .allMatch(pos -> pos == DESTINATION);
+        return allPiecesArrived(game.getPlayer1Pieces()) || allPiecesArrived(game.getPlayer2Pieces());
+    }
 
-        // 检查玩家2是否所有棋子到达终点
-        boolean player2Wins = game.getPlayer2Pieces().stream()
-                .allMatch(pos -> pos == DESTINATION);
-
-        return player1Wins || player2Wins;
+    /**
+     * 只看规则里的前 PIECES_PER_PLAYER 枚棋子。
+     * 早期创建的对局存了 4 枚棋子，后两枚永远无法移动，全部检查会导致对局永远结束不了。
+     */
+    private boolean allPiecesArrived(java.util.List<Integer> pieces) {
+        if (pieces == null || pieces.isEmpty()) {
+            return false;
+        }
+        return pieces.stream()
+                .limit(PIECES_PER_PLAYER)
+                .allMatch(pos -> pos != null && pos == DESTINATION);
     }
 
     @Override
     public Long determineWinner(GameResponse game) {
         // 检查玩家1是否胜利
-        boolean player1Wins = game.getPlayer1Pieces().stream()
-                .allMatch(pos -> pos == DESTINATION);
+        boolean player1Wins = allPiecesArrived(game.getPlayer1Pieces());
 
         if (player1Wins) {
             return game.getPlayer1Id();
         }
 
         // 检查玩家2是否胜利
-        boolean player2Wins = game.getPlayer2Pieces().stream()
-                .allMatch(pos -> pos == DESTINATION);
+        boolean player2Wins = allPiecesArrived(game.getPlayer2Pieces());
 
         if (player2Wins) {
             return game.getPlayer2Id();

@@ -62,4 +62,12 @@ public class Application {
 
     @TableField("updated_at")
     private LocalDateTime updatedAt;
+
+    /** 申请人显示名（姓名优先，没有则用用户名），由 service 查询 users 表后填充，不落库 */
+    @TableField(exist = false)
+    private String applicantName;
+
+    /** 审批人显示名，规则同上 */
+    @TableField(exist = false)
+    private String approverName;
 }

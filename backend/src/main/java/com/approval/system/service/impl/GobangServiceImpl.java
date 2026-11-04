@@ -1,5 +1,6 @@
 package com.approval.system.service.impl;
 
+import com.approval.system.common.exception.BusinessException;
 import com.approval.system.common.enums.GameStatusEnum;
 import com.approval.system.dto.GobangMoveResponse;
 import com.approval.system.dto.GobangResponse;
@@ -65,10 +66,10 @@ public class GobangServiceImpl implements IGobangService {
     @Transactional
     public GobangResponse createGame(Long userId, Long opponentUserId) {
         if (Objects.equals(userId, opponentUserId)) {
-            throw new RuntimeException("不能邀请自己进行五子棋");
+            throw BusinessException.badRequest("不能邀请自己进行五子棋");
         }
         if (!userRelationService.isRelated(userId, opponentUserId)) {
-            throw new RuntimeException("只有互为对象的用户才能一起玩五子棋");
+            throw BusinessException.forbidden("只有互为对象的用户才能一起玩五子棋");
         }
         Long activeCount = gobangGameMapper.selectCount(new QueryWrapper<GobangGame>()
                 .and(wrapper -> wrapper
@@ -76,7 +77,7 @@ public class GobangServiceImpl implements IGobangService {
                         .or(pair -> pair.eq("black_player_id", opponentUserId).eq("invited_player_id", userId)))
                 .in("game_status", GameStatusEnum.WAITING.getCode(), GameStatusEnum.PLAYING.getCode()));
         if (activeCount != null && activeCount > 0) {
-            throw new RuntimeException("你们已有未结束的五子棋对局");
+            throw BusinessException.conflict("你们已有未结束的五子棋对局");
         }
 
         GobangGame game = GobangGame.builder()
@@ -101,13 +102,13 @@ public class GobangServiceImpl implements IGobangService {
                 .eq("game_code", gameCode)
                 .eq("game_status", GameStatusEnum.WAITING.getCode()));
         if (game == null) {
-            throw new RuntimeException("五子棋房间不存在或已开始");
+            throw BusinessException.badRequest("五子棋房间不存在或已开始");
         }
         if (!Objects.equals(game.getInvitedPlayerId(), userId)) {
-            throw new RuntimeException("只有被邀请的对象可以加入该房间");
+            throw BusinessException.forbidden("只有被邀请的对象可以加入该房间");
         }
         if (Objects.equals(game.getBlackPlayerId(), userId)) {
-            throw new RuntimeException("不能加入自己创建的房间");
+            throw BusinessException.badRequest("不能加入自己创建的房间");
         }
 
         game.setWhitePlayerId(userId);
@@ -123,7 +124,7 @@ public class GobangServiceImpl implements IGobangService {
     public GobangResponse getGameDetail(Long gameId, Long userId) {
         GobangGame game = getGameById(gameId);
         if (!isGameParticipant(game, userId)) {
-            throw new RuntimeException("你不是这场五子棋的参与者");
+            throw BusinessException.forbidden("你不是这场五子棋的参与者");
         }
         return convertToResponse(game);
     }
@@ -164,7 +165,7 @@ public class GobangServiceImpl implements IGobangService {
 
         int color = getPlayerColor(game, userId);
         if (!Objects.equals(game.getCurrentTurn(), color)) {
-            throw new RuntimeException("还没轮到你");
+            throw BusinessException.badRequest("还没轮到你");
         }
 
         List<List<Integer>> board = parseBoard(game.getBoardData());
@@ -215,18 +216,18 @@ public class GobangServiceImpl implements IGobangService {
                 .eq("game_id", gameId)
                 .eq("status", UNDO_PENDING));
         if (existing != null) {
-            throw new RuntimeException("已有待处理的悔棋请求");
+            throw BusinessException.conflict("已有待处理的悔棋请求");
         }
 
         GobangMove latestMove = getLatestEffectivePlaceMove(gameId);
         if (latestMove == null) {
-            throw new RuntimeException("当前没有可悔棋的落子");
+            throw BusinessException.badRequest("当前没有可悔棋的落子");
         }
         Long targetUndoCount = gobangUndoRequestMapper.selectCount(new QueryWrapper<GobangUndoRequest>()
                 .eq("game_id", gameId)
                 .eq("target_move_number", latestMove.getMoveNumber()));
         if (targetUndoCount != null && targetUndoCount > 0) {
-            throw new RuntimeException("该步已经申请过悔棋");
+            throw BusinessException.conflict("该步已经申请过悔棋");
         }
 
         Long responderId = Objects.equals(userId, game.getBlackPlayerId())
@@ -256,10 +257,10 @@ public class GobangServiceImpl implements IGobangService {
                 .eq("game_id", gameId)
                 .eq("status", UNDO_PENDING));
         if (request == null) {
-            throw new RuntimeException("没有待处理的悔棋请求");
+            throw BusinessException.badRequest("没有待处理的悔棋请求");
         }
         if (!Objects.equals(request.getResponderId(), userId)) {
-            throw new RuntimeException("只有对方可以处理悔棋请求");
+            throw BusinessException.forbidden("只有对方可以处理悔棋请求");
         }
 
         request.setStatus(Boolean.TRUE.equals(accepted) ? UNDO_ACCEPTED : UNDO_REJECTED);
@@ -344,10 +345,10 @@ public class GobangServiceImpl implements IGobangService {
     public void cancelGame(Long gameId, Long userId) {
         GobangGame game = getGameByIdForUpdate(gameId);
         if (!Objects.equals(game.getBlackPlayerId(), userId)) {
-            throw new RuntimeException("只有房主可以取消五子棋房间");
+            throw BusinessException.forbidden("只有房主可以取消五子棋房间");
         }
         if (!Objects.equals(game.getGameStatus(), GameStatusEnum.WAITING.getCode())) {
-            throw new RuntimeException("只能取消等待中的五子棋房间");
+            throw BusinessException.badRequest("只能取消等待中的五子棋房间");
         }
         game.setGameStatus(GameStatusEnum.CANCELLED.getCode());
         game.setUpdatedAt(LocalDateTime.now());
@@ -370,7 +371,7 @@ public class GobangServiceImpl implements IGobangService {
     public GobangGame getGameById(Long gameId) {
         GobangGame game = gobangGameMapper.selectById(gameId);
         if (game == null) {
-            throw new RuntimeException("五子棋对局不存在");
+            throw BusinessException.notFound("五子棋对局不存在");
         }
         return game;
     }
@@ -383,7 +384,7 @@ public class GobangServiceImpl implements IGobangService {
             game = gobangGameMapper.selectById(gameId);
         }
         if (game == null) {
-            throw new RuntimeException("五子棋对局不存在");
+            throw BusinessException.notFound("五子棋对局不存在");
         }
         return game;
     }
@@ -482,18 +483,18 @@ public class GobangServiceImpl implements IGobangService {
                 return code;
             }
         }
-        throw new RuntimeException("生成五子棋房间号失败");
+        throw new IllegalStateException("生成五子棋房间号失败");
     }
 
     private void ensurePlaying(GobangGame game) {
         if (!Objects.equals(game.getGameStatus(), GameStatusEnum.PLAYING.getCode())) {
-            throw new RuntimeException("五子棋尚未开始或已结束");
+            throw BusinessException.badRequest("五子棋尚未开始或已结束");
         }
     }
 
     private void ensureParticipant(GobangGame game, Long userId) {
         if (!isGameParticipant(game, userId)) {
-            throw new RuntimeException("你不是这场五子棋的参与者");
+            throw BusinessException.forbidden("你不是这场五子棋的参与者");
         }
     }
 
@@ -510,7 +511,7 @@ public class GobangServiceImpl implements IGobangService {
         if (Objects.equals(game.getWhitePlayerId(), userId)) {
             return IGobangEngine.WHITE;
         }
-        throw new RuntimeException("你不是这场五子棋的落子玩家");
+        throw BusinessException.forbidden("你不是这场五子棋的落子玩家");
     }
 
     private List<List<Integer>> parseBoard(String boardData) {
@@ -529,7 +530,7 @@ public class GobangServiceImpl implements IGobangService {
         try {
             return objectMapper.writeValueAsString(value);
         } catch (JsonProcessingException e) {
-            throw new RuntimeException("序列化五子棋数据失败", e);
+            throw new IllegalStateException("序列化五子棋数据失败", e);
         }
     }
 

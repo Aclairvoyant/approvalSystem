@@ -4,9 +4,10 @@ import com.approval.system.common.response.ApiResponse;
 import com.approval.system.dto.DailyItemRequest;
 import com.approval.system.entity.DailyItem;
 import com.approval.system.service.IDailyItemService;
+import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,72 +22,37 @@ public class DailyItemController {
 
     @GetMapping
     public ApiResponse<List<DailyItem>> listItems(
+            @AuthenticationPrincipal Long userId,
             @RequestParam(required = false) Integer status,
             @RequestParam(required = false) Integer itemType,
             @RequestParam(required = false) Boolean todayOnly) {
-        try {
-            Long userId = currentUserId();
-            return ApiResponse.success(dailyItemService.listVisibleItems(userId, status, itemType, todayOnly));
-        } catch (Exception e) {
-            log.error("List daily items failed", e);
-            return ApiResponse.fail(400, e.getMessage());
-        }
+        return ApiResponse.success(dailyItemService.listVisibleItems(userId, status, itemType, todayOnly));
     }
 
     @PostMapping
-    public ApiResponse<DailyItem> createItem(@RequestBody DailyItemRequest request) {
-        try {
-            Long userId = currentUserId();
-            return ApiResponse.success(dailyItemService.createItem(userId, toEntity(request)));
-        } catch (Exception e) {
-            log.error("Create daily item failed", e);
-            return ApiResponse.fail(400, e.getMessage());
-        }
+    public ApiResponse<DailyItem> createItem(@AuthenticationPrincipal Long userId, @Valid @RequestBody DailyItemRequest request) {
+        return ApiResponse.success(dailyItemService.createItem(userId, toEntity(request)));
     }
 
     @PutMapping("/{id}")
-    public ApiResponse<DailyItem> updateItem(@PathVariable Long id, @RequestBody DailyItemRequest request) {
-        try {
-            Long userId = currentUserId();
-            return ApiResponse.success(dailyItemService.updateItem(userId, id, toEntity(request)));
-        } catch (Exception e) {
-            log.error("Update daily item failed", e);
-            return ApiResponse.fail(400, e.getMessage());
-        }
+    public ApiResponse<DailyItem> updateItem(@AuthenticationPrincipal Long userId, @PathVariable Long id, @Valid @RequestBody DailyItemRequest request) {
+        return ApiResponse.success(dailyItemService.updateItem(userId, id, toEntity(request)));
     }
 
     @PostMapping("/{id}/complete")
-    public ApiResponse<DailyItem> completeItem(@PathVariable Long id) {
-        try {
-            Long userId = currentUserId();
-            return ApiResponse.success(dailyItemService.completeItem(userId, id));
-        } catch (Exception e) {
-            log.error("Complete daily item failed", e);
-            return ApiResponse.fail(400, e.getMessage());
-        }
+    public ApiResponse<DailyItem> completeItem(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
+        return ApiResponse.success(dailyItemService.completeItem(userId, id));
     }
 
     @PostMapping("/{id}/archive")
-    public ApiResponse<DailyItem> archiveItem(@PathVariable Long id) {
-        try {
-            Long userId = currentUserId();
-            return ApiResponse.success(dailyItemService.archiveItem(userId, id));
-        } catch (Exception e) {
-            log.error("Archive daily item failed", e);
-            return ApiResponse.fail(400, e.getMessage());
-        }
+    public ApiResponse<DailyItem> archiveItem(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
+        return ApiResponse.success(dailyItemService.archiveItem(userId, id));
     }
 
     @DeleteMapping("/{id}")
-    public ApiResponse<Void> deleteItem(@PathVariable Long id) {
-        try {
-            Long userId = currentUserId();
-            dailyItemService.deleteItem(userId, id);
-            return ApiResponse.success();
-        } catch (Exception e) {
-            log.error("Delete daily item failed", e);
-            return ApiResponse.fail(400, e.getMessage());
-        }
+    public ApiResponse<Void> deleteItem(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
+        dailyItemService.deleteItem(userId, id);
+        return ApiResponse.success();
     }
 
     private DailyItem toEntity(DailyItemRequest request) {
@@ -98,9 +64,5 @@ public class DailyItemController {
                 .priority(request.getPriority())
                 .targetDate(request.getTargetDate())
                 .build();
-    }
-
-    private Long currentUserId() {
-        return (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
     }
 }

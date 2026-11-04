@@ -1,5 +1,6 @@
 package com.approval.system.service.impl;
 
+import com.approval.system.common.exception.BusinessException;
 import com.approval.system.config.MiMoConfig;
 import com.approval.system.dto.EffectiveEmailSettings;
 import com.approval.system.dto.EffectiveVoiceModelSettings;
@@ -80,19 +81,19 @@ public class SystemSettingServiceImpl implements ISystemSettingService {
     @Transactional
     public EmailSettingsResponse updateEmailSettings(EmailSettingsUpdateRequest request, Long updatedBy) {
         if (request == null) {
-            throw new IllegalArgumentException("Email settings cannot be empty");
+            throw BusinessException.badRequest("邮件配置不能为空");
         }
 
         EffectiveEmailSettings current = getEffectiveEmailSettings();
-        String host = requiredOrCurrent(request.getHost(), current.getHost(), "SMTP host cannot be empty");
+        String host = requiredOrCurrent(request.getHost(), current.getHost(), "SMTP 服务器地址不能为空");
         Integer port = request.getPort() != null ? request.getPort() : current.getPort();
         validatePort(port);
-        String username = requiredOrCurrent(request.getUsername(), current.getUsername(), "SMTP username cannot be empty");
+        String username = requiredOrCurrent(request.getUsername(), current.getUsername(), "SMTP 用户名不能为空");
         String fromEmail = valueOrCurrent(request.getFromEmail(), current.getFromEmail());
         Boolean sslEnabled = request.getSslEnabled() != null ? request.getSslEnabled() : current.getSslEnabled();
         String currentUsername = StringUtils.hasText(current.getUsername()) ? current.getUsername().trim() : "";
         if (!username.equalsIgnoreCase(currentUsername) && !StringUtils.hasText(request.getPassword())) {
-            throw new IllegalArgumentException("Changing SMTP username requires a new SMTP password or authorization code");
+            throw BusinessException.badRequest("修改 SMTP 用户名时需要同时填写新的密码或授权码");
         }
 
         replaceSetting(EMAIL_HOST, host, false, "SMTP host", updatedBy);
@@ -131,7 +132,7 @@ public class SystemSettingServiceImpl implements ISystemSettingService {
     @Transactional
     public VoiceModelSettingsResponse updateVoiceModelSettings(VoiceModelSettingsUpdateRequest request, Long updatedBy) {
         if (request == null) {
-            throw new IllegalArgumentException("Voice model settings cannot be empty");
+            throw BusinessException.badRequest("语音大模型配置不能为空");
         }
 
         EffectiveVoiceModelSettings current = getEffectiveVoiceModelSettings();
@@ -167,18 +168,18 @@ public class SystemSettingServiceImpl implements ISystemSettingService {
         String asrBaseUrl = requiredOrCurrent(
                 firstText(request.getAsrBaseUrl(), request.getBaseUrl()),
                 current.getAsrBaseUrl(),
-                "ASR base URL cannot be empty"
+                "语音识别服务地址不能为空"
         );
         String chatBaseUrl = requiredOrCurrent(
                 firstText(request.getChatBaseUrl(), request.getBaseUrl()),
                 providerChanged ? defaultBaseUrl(provider, current.getChatBaseUrl()) : current.getChatBaseUrl(),
-                "Chat model base URL cannot be empty"
+                "语音大模型服务地址不能为空"
         );
-        String asrModel = requiredOrCurrent(request.getAsrModel(), current.getAsrModel(), "ASR model cannot be empty");
+        String asrModel = requiredOrCurrent(request.getAsrModel(), current.getAsrModel(), "语音识别模型不能为空");
         String chatModel = requiredOrCurrent(
                 request.getChatModel(),
                 providerChanged ? defaultChatModel(provider, current.getChatModel()) : current.getChatModel(),
-                "Chat model cannot be empty"
+                "语音大模型名称不能为空"
         );
         Boolean enabled = request.getEnabled() != null ? request.getEnabled() : current.getEnabled();
 
@@ -342,7 +343,7 @@ public class SystemSettingServiceImpl implements ISystemSettingService {
     private String requiredOrCurrent(String value, String current, String message) {
         String resolved = valueOrCurrent(value, current);
         if (!StringUtils.hasText(resolved)) {
-            throw new IllegalArgumentException(message);
+            throw BusinessException.badRequest(message);
         }
         return resolved.trim();
     }
@@ -367,7 +368,7 @@ public class SystemSettingServiceImpl implements ISystemSettingService {
 
     private void validatePort(Integer port) {
         if (port == null || port <= 0 || port > 65535) {
-            throw new IllegalArgumentException("SMTP port must be between 1 and 65535");
+            throw BusinessException.badRequest("SMTP 端口必须在 1-65535 之间");
         }
     }
 

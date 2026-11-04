@@ -12,6 +12,6 @@ import lombok.NoArgsConstructor;
 @Builder
 public class GobangUndoResponseRequest {
 
-    @NotNull(message = "Accepted flag cannot be null")
+    @NotNull(message = "请选择是否同意悔棋")
     private Boolean accepted;
 }

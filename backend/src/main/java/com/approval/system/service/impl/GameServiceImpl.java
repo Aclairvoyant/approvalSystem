@@ -1,5 +1,6 @@
 package com.approval.system.service.impl;
 
+import com.approval.system.common.exception.BusinessException;
 import com.approval.system.common.enums.GameMoveTypeEnum;
 import com.approval.system.common.enums.GameStatusEnum;
 import com.approval.system.dto.GameResponse;
@@ -15,6 +16,7 @@ import com.approval.system.service.IGameService;
 import com.approval.system.service.IGameTaskService;
 import com.approval.system.service.IUserRelationService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
@@ -65,7 +67,7 @@ public class GameServiceImpl extends ServiceImpl<GameMapper, Game> implements IG
 
         // 验证是否互为对象
         if (!userRelationService.isRelated(userId, opponentUserId)) {
-            throw new RuntimeException("只有互为对象的用户才能一起玩游戏");
+            throw BusinessException.forbidden("只有互为对象的用户才能一起玩游戏");
         }
 
         // 检查是否有未完成的游戏
@@ -74,14 +76,14 @@ public class GameServiceImpl extends ServiceImpl<GameMapper, Game> implements IG
         queryWrapper.in("game_status", GameStatusEnum.WAITING.getCode(), GameStatusEnum.PLAYING.getCode());
         Game existingGame = this.getOne(queryWrapper);
         if (existingGame != null) {
-            throw new RuntimeException("您有未完成的游戏，请先结束当前游戏");
+            throw BusinessException.conflict("您有未完成的游戏，请先结束当前游戏");
         }
 
         // 生成6位随机房间号
         String gameCode = generateGameCode();
 
-        // 初始化棋子位置
-        List<Integer> initialPieces = Arrays.asList(0, 0, 0, 0);
+        // 初始化棋子位置：与 FlightChessEngineImpl.PIECES_PER_PLAYER 一致，每人 2 枚
+        List<Integer> initialPieces = Arrays.asList(0, 0);
 
         // 使用自定义任务位置或默认位置
         List<Integer> finalTaskPositions = (taskPositions != null && !taskPositions.isEmpty())
@@ -115,19 +117,19 @@ public class GameServiceImpl extends ServiceImpl<GameMapper, Game> implements IG
 
         // 只有房主可以修改任务位置
         if (!game.getPlayer1Id().equals(userId)) {
-            throw new RuntimeException("只有房主可以修改任务位置");
+            throw BusinessException.forbidden("只有房主可以修改任务位置");
         }
 
         // 只有等待中的游戏可以修改
         if (!game.getGameStatus().equals(GameStatusEnum.WAITING.getCode())) {
-            throw new RuntimeException("只能在等待状态修改任务位置");
+            throw BusinessException.badRequest("只能在等待状态修改任务位置");
         }
 
         // 验证任务位置有效性（1-52之间）
         if (taskPositions != null && !taskPositions.isEmpty()) {
             for (Integer pos : taskPositions) {
                 if (pos < 1 || pos > 52) {
-                    throw new RuntimeException("任务位置必须在1-52之间");
+                    throw BusinessException.badRequest("任务位置必须在1-52之间");
                 }
             }
         }
@@ -153,17 +155,17 @@ public class GameServiceImpl extends ServiceImpl<GameMapper, Game> implements IG
         Game game = this.getOne(queryWrapper);
 
         if (game == null) {
-            throw new RuntimeException("游戏房间不存在或已开始");
+            throw BusinessException.badRequest("游戏房间不存在或已开始");
         }
 
         // 不能加入自己创建的游戏
         if (game.getPlayer1Id().equals(userId)) {
-            throw new RuntimeException("不能加入自己创建的游戏");
+            throw BusinessException.badRequest("不能加入自己创建的游戏");
         }
 
         // 验证是否互为对象
         if (!userRelationService.isRelated(userId, game.getPlayer1Id())) {
-            throw new RuntimeException("只有互为对象的用户才能一起玩游戏");
+            throw BusinessException.forbidden("只有互为对象的用户才能一起玩游戏");
         }
 
         // 获取任务位置
@@ -201,11 +203,28 @@ public class GameServiceImpl extends ServiceImpl<GameMapper, Game> implements IG
 
         // 验证是否轮到该玩家
         if (!isPlayerTurn(gameId, userId)) {
-            throw new RuntimeException("还没轮到你");
+            throw BusinessException.badRequest("还没轮到你");
+        }
+
+        // 本回合已经掷过、还没走棋（比如刷新了页面）：不重掷，原样返回上次的点数
+        if (game.getLastDiceResult() != null) {
+            log.info("本回合已掷过骰子，返回原结果: gameId={}, userId={}, result={}",
+                    gameId, userId, game.getLastDiceResult());
+            return game.getLastDiceResult();
         }
 
         // 掷骰子
         int diceResult = random.nextInt(6) + 1;
+
+        // 只在骰子为空时写入，并发的两次掷骰只有一次生效
+        boolean recorded = this.update(new UpdateWrapper<Game>()
+                .set("last_dice_result", diceResult)
+                .set("last_move_time", LocalDateTime.now())
+                .eq("id", gameId)
+                .isNull("last_dice_result"));
+        if (!recorded) {
+            throw BusinessException.badRequest("已经掷过骰子了，请先移动棋子");
+        }
 
         // 记录操作
         GameMove move = GameMove.builder()
@@ -217,28 +236,29 @@ public class GameServiceImpl extends ServiceImpl<GameMapper, Game> implements IG
                 .build();
         gameMoveMapper.insert(move);
 
-        // 更新游戏状态
-        game.setLastDiceResult(diceResult);
-        game.setLastMoveTime(LocalDateTime.now());
-        this.updateById(game);
-
         log.info("掷骰子: gameId={}, userId={}, result={}", gameId, userId, diceResult);
         return diceResult;
     }
 
     @Override
     @Transactional
-    public GameResponse movePiece(Long gameId, Long userId, Integer pieceIndex, Integer diceResult) {
+    public GameResponse movePiece(Long gameId, Long userId, Integer pieceIndex) {
         Game game = getGameById(gameId);
 
         // 验证游戏状态
         if (!game.getGameStatus().equals(GameStatusEnum.PLAYING.getCode())) {
-            throw new RuntimeException("游戏未开始或已结束");
+            throw BusinessException.badRequest("游戏未开始或已结束");
         }
 
         // 验证是否轮到该玩家
         if (!isPlayerTurn(gameId, userId)) {
-            throw new RuntimeException("还没轮到你");
+            throw BusinessException.badRequest("还没轮到你");
+        }
+
+        // 点数只认服务端记录的本回合骰子，不信任客户端传来的值
+        Integer diceResult = game.getLastDiceResult();
+        if (diceResult == null) {
+            throw BusinessException.badRequest("请先掷骰子");
         }
 
         // 确定玩家编号
@@ -248,8 +268,8 @@ public class GameServiceImpl extends ServiceImpl<GameMapper, Game> implements IG
                 new ArrayList<>(game.getPlayer2Pieces());
 
         // 验证棋子索引
-        if (pieceIndex < 0 || pieceIndex >= 4) {
-            throw new RuntimeException("无效的棋子索引");
+        if (pieceIndex == null || pieceIndex < 0 || pieceIndex >= playerPieces.size()) {
+            throw BusinessException.badRequest("无效的棋子索引");
         }
 
         int currentPosition = playerPieces.get(pieceIndex);
@@ -258,16 +278,27 @@ public class GameServiceImpl extends ServiceImpl<GameMapper, Game> implements IG
         // 如果在基地，检查是否可以出基地
         if (currentPosition == 0) {
             if (!chessEngine.canLeaveBattlebase(diceResult)) {
-                throw new RuntimeException("必须掷到6才能出基地");
+                throw BusinessException.badRequest("必须掷到6才能出基地");
             }
             newPosition = 1;  // 出基地到位置1
         } else {
             // 计算新位置
             newPosition = chessEngine.calculateNewPosition(currentPosition, diceResult, playerNumber);
             if (newPosition == -1) {
-                throw new RuntimeException("无法移动该棋子");
+                throw BusinessException.badRequest("无法移动该棋子");
             }
         }
+
+        // 用掉这次骰子：带上原点数做条件，同一次骰子不能被并发的两步棋各用一次
+        boolean consumed = this.update(new UpdateWrapper<Game>()
+                .set("last_dice_result", null)
+                .eq("id", gameId)
+                .eq("last_dice_result", diceResult));
+        if (!consumed) {
+            throw BusinessException.badRequest("请先掷骰子");
+        }
+        // updateById 会跳过 null 字段，库里的值已经由上面的语句清空
+        game.setLastDiceResult(null);
 
         // 记录移动前位置
         int fromPosition = currentPosition;
@@ -357,12 +388,39 @@ public class GameServiceImpl extends ServiceImpl<GameMapper, Game> implements IG
     }
 
     @Override
+    public Game passTurn(Long gameId, Long userId) {
+        Game game = getGameById(gameId);
+        Integer diceResult = game.getLastDiceResult();
+        if (diceResult == null || !isPlayerTurn(gameId, userId)) {
+            return null;
+        }
+
+        int currentTurn = game.getCurrentTurn();
+        int newTurn = currentTurn == 1 ? 2 : 1;
+        // 条件更新：同一次骰子重复触发跳过时，回合不会被来回切换
+        boolean passed = this.update(new UpdateWrapper<Game>()
+                .set("current_turn", newTurn)
+                .set("last_dice_result", null)
+                .set("last_move_time", LocalDateTime.now())
+                .eq("id", gameId)
+                .eq("current_turn", currentTurn)
+                .eq("last_dice_result", diceResult));
+        if (!passed) {
+            return null;
+        }
+
+        game.setCurrentTurn(newTurn);
+        game.setLastDiceResult(null);
+        return game;
+    }
+
+    @Override
     public GameResponse getGameDetail(Long gameId, Long userId) {
         Game game = getGameById(gameId);
 
         // 验证用户是否是游戏参与者
         if (!validateGamePlayer(gameId, userId)) {
-            throw new RuntimeException("您不是这场游戏的参与者");
+            throw BusinessException.forbidden("您不是这场游戏的参与者");
         }
 
         return convertToResponse(game);
@@ -435,11 +493,11 @@ public class GameServiceImpl extends ServiceImpl<GameMapper, Game> implements IG
 
         // 只有房主可以取消等待中的游戏
         if (!game.getPlayer1Id().equals(userId)) {
-            throw new RuntimeException("只有房主可以取消游戏");
+            throw BusinessException.forbidden("只有房主可以取消游戏");
         }
 
         if (!game.getGameStatus().equals(GameStatusEnum.WAITING.getCode())) {
-            throw new RuntimeException("只能取消等待中的游戏");
+            throw BusinessException.badRequest("只能取消等待中的游戏");
         }
 
         game.setGameStatus(GameStatusEnum.CANCELLED.getCode());
@@ -456,12 +514,12 @@ public class GameServiceImpl extends ServiceImpl<GameMapper, Game> implements IG
 
         // 只有房主可以强制结束游戏
         if (!game.getPlayer1Id().equals(userId)) {
-            throw new RuntimeException("只有房主可以结束游戏");
+            throw BusinessException.forbidden("只有房主可以结束游戏");
         }
 
         // 只能结束进行中的游戏
         if (!game.getGameStatus().equals(GameStatusEnum.PLAYING.getCode())) {
-            throw new RuntimeException("只能结束进行中的游戏");
+            throw BusinessException.badRequest("只能结束进行中的游戏");
         }
 
         // 强制结束游戏，房主主动结束则对方获胜（或平局处理）
@@ -479,7 +537,7 @@ public class GameServiceImpl extends ServiceImpl<GameMapper, Game> implements IG
     public Game getGameById(Long gameId) {
         Game game = this.getById(gameId);
         if (game == null) {
-            throw new RuntimeException("游戏不存在");
+            throw BusinessException.notFound("游戏不存在");
         }
         return game;
     }

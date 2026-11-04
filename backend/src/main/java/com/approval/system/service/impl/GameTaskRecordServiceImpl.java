@@ -1,5 +1,6 @@
 package com.approval.system.service.impl;
 
+import com.approval.system.common.exception.BusinessException;
 import com.approval.system.common.enums.TaskStatusEnum;
 import com.approval.system.entity.GameTask;
 import com.approval.system.entity.GameTaskRecord;
@@ -66,16 +67,16 @@ public class GameTaskRecordServiceImpl extends ServiceImpl<GameTaskRecordMapper,
         GameTaskRecord record = this.getById(recordId);
 
         if (record == null) {
-            throw new RuntimeException("任务记录不存在");
+            throw BusinessException.notFound("任务记录不存在");
         }
 
         if (!record.getTaskStatus().equals(TaskStatusEnum.IN_PROGRESS.getCode())) {
-            throw new RuntimeException("任务已完成或已放弃");
+            throw BusinessException.badRequest("任务已完成或已放弃");
         }
 
         // 验证是否是任务执行者
         if (!record.getExecutorPlayerId().equals(userId)) {
-            throw new RuntimeException("只有任务执行者可以完成任务");
+            throw BusinessException.forbidden("只有任务执行者可以完成任务");
         }
 
         record.setTaskStatus(TaskStatusEnum.COMPLETED.getCode());
@@ -93,16 +94,16 @@ public class GameTaskRecordServiceImpl extends ServiceImpl<GameTaskRecordMapper,
         GameTaskRecord record = this.getById(recordId);
 
         if (record == null) {
-            throw new RuntimeException("任务记录不存在");
+            throw BusinessException.notFound("任务记录不存在");
         }
 
         if (!record.getTaskStatus().equals(TaskStatusEnum.IN_PROGRESS.getCode())) {
-            throw new RuntimeException("任务已完成或已放弃");
+            throw BusinessException.badRequest("任务已完成或已放弃");
         }
 
         // 验证是否是任务执行者
         if (!record.getExecutorPlayerId().equals(userId)) {
-            throw new RuntimeException("只有任务执行者可以放弃任务");
+            throw BusinessException.forbidden("只有任务执行者可以放弃任务");
         }
 
         record.setTaskStatus(TaskStatusEnum.ABANDONED.getCode());

@@ -12,6 +12,6 @@ import lombok.NoArgsConstructor;
 @Builder
 public class GobangCreateRequest {
 
-    @NotNull(message = "Opponent user ID cannot be null")
+    @NotNull(message = "对方用户ID不能为空")
     private Long opponentUserId;
 }

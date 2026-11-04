@@ -1,5 +1,6 @@
 package com.approval.system.websocket;
 
+import com.approval.system.common.security.ActiveUserChecker;
 import com.approval.system.common.utils.JwtUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +24,9 @@ public class WebSocketHandshakeInterceptor implements HandshakeInterceptor {
     @Autowired
     private JwtUtils jwtUtils;
 
+    @Autowired
+    private ActiveUserChecker activeUserChecker;
+
     @Override
     public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
                                    WebSocketHandler wsHandler, Map<String, Object> attributes) throws Exception {
@@ -45,6 +49,11 @@ public class WebSocketHandshakeInterceptor implements HandshakeInterceptor {
             if (token != null && jwtUtils.validateToken(token)) {
                 Long userId = jwtUtils.getUserIdFromToken(token);
                 String username = jwtUtils.getUsernameFromToken(token);
+
+                if (userId != null && !activeUserChecker.isActive(userId)) {
+                    log.warn("WebSocket握手失败: 账号已被禁用, userId={}", userId);
+                    return false;
+                }
 
                 if (userId != null) {
                     attributes.put("userId", userId);

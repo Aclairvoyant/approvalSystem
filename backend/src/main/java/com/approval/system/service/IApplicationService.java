@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
+
 public interface IApplicationService extends IService<Application> {
 
     /**
@@ -35,6 +37,11 @@ public interface IApplicationService extends IService<Application> {
     void assertApplicationParticipant(Long applicationId, Long userId);
 
     /**
+     * 校验当前用户是申请参与人（申请人或审批人）或管理员
+     */
+    void assertApplicationParticipantOrAdmin(Long applicationId, Long userId);
+
+    /**
      * 校验当前用户是申请人
      */
     void assertApplicationApplicant(Long applicationId, Long userId);
@@ -45,7 +52,9 @@ public interface IApplicationService extends IService<Application> {
     void assertApplicationApprover(Long applicationId, Long userId);
 
     /**
-     * 手动发送语音通知给审批人
+     * 手动发送语音通知给审批人（仅申请人本人可操作）
+     *
+     * @throws com.approval.system.common.exception.BusinessException 操作人不是该申请的申请人，或未开通语音通知权限
      */
     boolean sendVoiceNotificationToApprover(Long applicationId, Long operatorId);
 
@@ -74,6 +83,21 @@ public interface IApplicationService extends IService<Application> {
     void rejectApplication(Long applicationId, Long approverId, String rejectReason, MultipartFile voiceReply);
 
     /**
+     * 管理员批准：不要求是指定的审批人，但申请必须仍处于待审批状态，操作日志记在管理员名下
+     */
+    void adminApproveApplication(Long applicationId, Long adminId, String approvalDetail);
+
+    /**
+     * 管理员驳回：规则同 adminApproveApplication
+     */
+    void adminRejectApplication(Long applicationId, Long adminId, String rejectReason);
+
+    /**
+     * 为申请列表批量填充申请人、审批人的显示名
+     */
+    void fillUserNames(List<Application> applications);
+
+    /**
      * 获取申请人的申请列表
      */
     Page<Application> getApplicantApplications(Long applicantId, Integer status, Integer pageNum, Integer pageSize);
@@ -82,6 +106,11 @@ public interface IApplicationService extends IService<Application> {
      * 获取审批人待审批的列表
      */
     Page<Application> getApproverPendingApplications(Long approverId, Integer pageNum, Integer pageSize);
+
+    /**
+     * 获取审批人待审批的列表，按标题关键词过滤（keyword 为空时不过滤）
+     */
+    Page<Application> getApproverPendingApplications(Long approverId, String keyword, Integer pageNum, Integer pageSize);
 
     /**
      * 获取我审批过的申请列表（已通过/已驳回）

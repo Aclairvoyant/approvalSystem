@@ -1,5 +1,6 @@
 package com.approval.system.service.impl;
 
+import com.approval.system.common.exception.BusinessException;
 import com.approval.system.dto.ApplicationCommentDTO;
 import com.approval.system.entity.ApplicationComment;
 import com.approval.system.entity.User;
@@ -80,11 +81,11 @@ public class ApplicationCommentServiceImpl extends ServiceImpl<ApplicationCommen
     public void deleteComment(Long commentId, Long userId) {
         ApplicationComment comment = this.getById(commentId);
         if (comment == null) {
-            throw new RuntimeException("评论不存在");
+            throw BusinessException.notFound("评论不存在");
         }
 
         if (!comment.getUserId().equals(userId)) {
-            throw new RuntimeException("无权删除此评论");
+            throw BusinessException.forbidden("无权删除此评论");
         }
 
         this.removeById(commentId);
@@ -96,11 +97,11 @@ public class ApplicationCommentServiceImpl extends ServiceImpl<ApplicationCommen
     public ApplicationCommentDTO updateComment(Long commentId, Long userId, String content) {
         ApplicationComment comment = this.getById(commentId);
         if (comment == null) {
-            throw new RuntimeException("评论不存在");
+            throw BusinessException.notFound("评论不存在");
         }
 
         if (!comment.getUserId().equals(userId)) {
-            throw new RuntimeException("无权修改此评论");
+            throw BusinessException.forbidden("无权修改此评论");
         }
 
         comment.setContent(content);

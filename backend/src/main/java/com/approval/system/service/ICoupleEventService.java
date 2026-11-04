@@ -14,5 +14,8 @@ public interface ICoupleEventService extends IService<CoupleEvent> {
 
     List<CoupleEvent> listUpcomingEvents(Long userId, int days);
 
+    /** 未来 days 天内的纪念日总数（listUpcomingEvents 只返回前 5 条） */
+    long countUpcomingEvents(Long userId, int days);
+
     void deleteEvent(Long userId, Long eventId);
 }

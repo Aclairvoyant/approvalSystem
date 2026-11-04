@@ -3,6 +3,7 @@ package com.approval.system.service.impl;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.approval.system.common.exception.BusinessException;
 import com.approval.system.config.MiMoConfig;
 import com.approval.system.dto.EffectiveVoiceModelSettings;
 import com.approval.system.dto.VoiceParseResult;
@@ -53,7 +54,7 @@ public class VoiceApplicationServiceImpl implements IVoiceApplicationService {
     @Override
     public VoiceParseResult parseVoice(MultipartFile audio, String language) {
         if (audio == null || audio.isEmpty()) {
-            throw new IllegalArgumentException("音频内容为空");
+            throw BusinessException.badRequest("音频内容为空");
         }
 
         // 1) 语音转写
@@ -62,10 +63,10 @@ public class VoiceApplicationServiceImpl implements IVoiceApplicationService {
             transcript = transcribe(audio.getBytes(), audio.getContentType(), audio.getOriginalFilename(), language);
         } catch (IOException e) {
             log.error("读取音频内容失败", e);
-            throw new IllegalStateException("读取音频内容失败");
+            throw BusinessException.badRequest("读取音频内容失败");
         }
         if (!StringUtils.hasText(transcript)) {
-            throw new IllegalStateException("未能识别出语音内容，请重试或说得更清楚一些");
+            throw BusinessException.badRequest("未能识别出语音内容，请重试或说得更清楚一些");
         }
 
         // 2) 抽取申请字段
@@ -81,7 +82,7 @@ public class VoiceApplicationServiceImpl implements IVoiceApplicationService {
     public String transcribe(byte[] audioBytes, String contentType, String filename, String language) {
         EffectiveVoiceModelSettings settings = validateAsrConfig();
         if (audioBytes == null || audioBytes.length == 0) {
-            throw new IllegalArgumentException("音频内容为空");
+            throw BusinessException.badRequest("音频内容为空");
         }
 
         String mime = resolveAudioMime(contentType, filename);
@@ -121,13 +122,13 @@ public class VoiceApplicationServiceImpl implements IVoiceApplicationService {
     private EffectiveVoiceModelSettings validateAsrConfig() {
         EffectiveVoiceModelSettings settings = resolveVoiceModelSettings();
         if (settings.getEnabled() == null || !settings.getEnabled()) {
-            throw new IllegalStateException("语音转文字功能未启用");
+            throw new BusinessException(BusinessException.SERVICE_UNAVAILABLE, "语音转文字功能未启用");
         }
         if (!isConfiguredApiKey(settings.getAsrApiKey())) {
-            throw new IllegalStateException("语音识别 API Key 未配置，请联系管理员");
+            throw new BusinessException(BusinessException.SERVICE_UNAVAILABLE, "语音识别 API Key 未配置，请联系管理员");
         }
         if (!StringUtils.hasText(settings.getAsrBaseUrl())) {
-            throw new IllegalStateException("语音识别服务地址未配置");
+            throw new BusinessException(BusinessException.SERVICE_UNAVAILABLE, "语音识别服务地址未配置");
         }
         return settings;
     }
@@ -135,13 +136,13 @@ public class VoiceApplicationServiceImpl implements IVoiceApplicationService {
     private EffectiveVoiceModelSettings validateChatConfig() {
         EffectiveVoiceModelSettings settings = resolveVoiceModelSettings();
         if (settings.getEnabled() == null || !settings.getEnabled()) {
-            throw new IllegalStateException("语音转文字功能未启用");
+            throw new BusinessException(BusinessException.SERVICE_UNAVAILABLE, "语音转文字功能未启用");
         }
         if (!isConfiguredApiKey(settings.getChatApiKey())) {
-            throw new IllegalStateException("语音大模型 API Key 未配置，请联系管理员");
+            throw new BusinessException(BusinessException.SERVICE_UNAVAILABLE, "语音大模型 API Key 未配置，请联系管理员");
         }
         if (!StringUtils.hasText(settings.getChatBaseUrl())) {
-            throw new IllegalStateException("语音大模型服务地址未配置");
+            throw new BusinessException(BusinessException.SERVICE_UNAVAILABLE, "语音大模型服务地址未配置");
         }
         return settings;
     }
@@ -221,14 +222,15 @@ public class VoiceApplicationServiceImpl implements IVoiceApplicationService {
             ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
             if (response.getStatusCode() != HttpStatus.OK) {
                 log.error("MiMo {} 请求失败，状态码: {}", stage, response.getStatusCode());
-                throw new IllegalStateException("MiMo " + stage + "请求失败");
+                throw new BusinessException(BusinessException.SERVICE_UNAVAILABLE, "MiMo " + stage + "请求失败");
             }
             return response.getBody();
-        } catch (IllegalStateException e) {
+        } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
+            // 原始异常可能带有内部地址等细节，只写日志，不返回给前端
             log.error("MiMo {} 调用异常", stage, e);
-            throw new IllegalStateException("MiMo " + stage + "调用异常：" + e.getMessage());
+            throw new BusinessException(BusinessException.SERVICE_UNAVAILABLE, "MiMo " + stage + "服务调用失败，请稍后重试", e);
         }
     }
 

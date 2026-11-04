@@ -185,13 +185,14 @@ public class GameMessage {
      * 创建游戏结束消息
      */
     public static GameMessage gameEnded(Long gameId, Long winnerId, String winnerName) {
+        // 强制结束（平局）时 winnerId / winnerName 为 null，Map.of 不接受 null 值，这里改用 HashMap
+        Map<String, Object> data = new java.util.HashMap<>();
+        data.put("winnerId", winnerId);
+        data.put("winnerName", winnerName);
         return GameMessage.builder()
                 .type(MessageType.GAME_ENDED)
                 .gameId(gameId)
-                .data(Map.of(
-                        "winnerId", winnerId,
-                        "winnerName", winnerName
-                ))
+                .data(data)
                 .timestamp(LocalDateTime.now())
                 .build();
     }
@@ -200,10 +201,20 @@ public class GameMessage {
      * 创建错误消息
      */
     public static GameMessage error(Long gameId, String errorMessage) {
+        return error(gameId, null, errorMessage);
+    }
+
+    /**
+     * 错误消息会广播到整个房间，带上 senderId 让客户端只提示发起操作的一方
+     */
+    public static GameMessage error(Long gameId, Long senderId, String errorMessage) {
+        Map<String, Object> data = new java.util.HashMap<>();
+        data.put("error", errorMessage != null ? errorMessage : "操作失败");
         return GameMessage.builder()
                 .type(MessageType.ERROR)
                 .gameId(gameId)
-                .data(Map.of("error", errorMessage))
+                .senderId(senderId)
+                .data(data)
                 .timestamp(LocalDateTime.now())
                 .build();
     }

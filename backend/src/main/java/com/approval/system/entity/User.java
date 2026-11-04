@@ -1,5 +1,6 @@
 package com.approval.system.entity;
 
+import com.approval.system.common.enums.UserRoleEnum;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -64,6 +65,6 @@ public class User {
      * 是否是管理员
      */
     public boolean isAdmin() {
-        return role != null && role == 1;
+        return UserRoleEnum.ADMIN.is(role);
     }
 }

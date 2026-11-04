@@ -33,14 +33,20 @@ public interface IGameService extends IService<Game> {
     GameResponse joinGame(Long userId, String gameCode);
 
     /**
-     * 掷骰子
+     * 掷骰子。本回合已经掷过、还没走棋时不会重掷，直接返回上次的点数
      */
     Integer rollDice(Long gameId, Long userId);
 
     /**
-     * 移动棋子
+     * 移动棋子，点数使用服务端记录的本回合骰子
      */
-    GameResponse movePiece(Long gameId, Long userId, Integer pieceIndex, Integer diceResult);
+    GameResponse movePiece(Long gameId, Long userId, Integer pieceIndex);
+
+    /**
+     * 掷出的点数没有棋子能走：清空骰子并把回合交给对方。
+     * 已经交出去了（重复调用）时返回 null
+     */
+    Game passTurn(Long gameId, Long userId);
 
     /**
      * 获取游戏详情

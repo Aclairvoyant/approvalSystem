@@ -16,13 +16,13 @@ public class GobangMoveRequest {
 
     private Long gameId;
 
-    @NotNull(message = "Row cannot be null")
-    @Min(value = 0, message = "Row must be at least 0")
-    @Max(value = 14, message = "Row must be at most 14")
+    @NotNull(message = "行坐标不能为空")
+    @Min(value = 0, message = "行坐标需在0-14之间")
+    @Max(value = 14, message = "行坐标需在0-14之间")
     private Integer row;
 
-    @NotNull(message = "Column cannot be null")
-    @Min(value = 0, message = "Column must be at least 0")
-    @Max(value = 14, message = "Column must be at most 14")
+    @NotNull(message = "列坐标不能为空")
+    @Min(value = 0, message = "列坐标需在0-14之间")
+    @Max(value = 14, message = "列坐标需在0-14之间")
     private Integer col;
 }

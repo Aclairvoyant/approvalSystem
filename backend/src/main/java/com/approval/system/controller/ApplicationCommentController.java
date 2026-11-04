@@ -2,13 +2,17 @@ package com.approval.system.controller;
 
 import com.approval.system.common.response.ApiResponse;
 import com.approval.system.dto.ApplicationCommentDTO;
+import com.approval.system.dto.CommentCreateRequest;
+import com.approval.system.dto.CommentUpdateRequest;
 import com.approval.system.service.IApplicationCommentService;
+import com.approval.system.service.IApplicationService;
+import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 @Slf4j
 @RestController
@@ -18,19 +22,18 @@ public class ApplicationCommentController {
     @Autowired
     private IApplicationCommentService commentService;
 
+    @Autowired
+    private IApplicationService applicationService;
+
     /**
-     * 获取申请的所有评论
+     * 获取申请的所有评论（申请人、审批人或管理员）
      */
     @GetMapping("/application/{applicationId}")
     public ApiResponse<List<ApplicationCommentDTO>> getApplicationComments(
+            @AuthenticationPrincipal Long userId,
             @PathVariable Long applicationId) {
-        try {
-            List<ApplicationCommentDTO> comments = commentService.getApplicationComments(applicationId);
-            return ApiResponse.success(comments);
-        } catch (Exception e) {
-            log.error("获取评论失败，applicationId: {}", applicationId, e);
-            return ApiResponse.fail(500, e.getMessage());
-        }
+        applicationService.assertApplicationParticipantOrAdmin(applicationId, userId);
+        return ApiResponse.success(commentService.getApplicationComments(applicationId));
     }
 
     /**
@@ -38,85 +41,31 @@ public class ApplicationCommentController {
      */
     @PostMapping
     public ApiResponse<ApplicationCommentDTO> createComment(
-            @RequestBody Map<String, Object> request) {
-        try {
-            Long userId = getCurrentUserId();
-            if (userId == null) {
-                return ApiResponse.fail(401, "用户未登录");
-            }
-
-            Long applicationId = Long.valueOf(request.get("applicationId").toString());
-            String content = request.get("content").toString();
-            Long parentId = request.get("parentId") != null
-                    ? Long.valueOf(request.get("parentId").toString())
-                    : null;
-
-            if (content == null || content.trim().isEmpty()) {
-                return ApiResponse.fail(400, "评论内容不能为空");
-            }
-
-            ApplicationCommentDTO comment = commentService.createComment(applicationId, userId, content, parentId);
-            return ApiResponse.success(comment);
-        } catch (Exception e) {
-            log.error("创建评论失败", e);
-            return ApiResponse.fail(500, e.getMessage());
-        }
+            @AuthenticationPrincipal Long userId,
+            @Valid @RequestBody CommentCreateRequest request) {
+        applicationService.assertApplicationParticipantOrAdmin(request.getApplicationId(), userId);
+        ApplicationCommentDTO comment = commentService.createComment(
+                request.getApplicationId(), userId, request.getContent(), request.getParentId());
+        return ApiResponse.success(comment);
     }
 
     /**
-     * 更新评论
+     * 更新评论（仅作者本人）
      */
     @PutMapping("/{commentId}")
     public ApiResponse<ApplicationCommentDTO> updateComment(
+            @AuthenticationPrincipal Long userId,
             @PathVariable Long commentId,
-            @RequestBody Map<String, String> request) {
-        try {
-            Long userId = getCurrentUserId();
-            if (userId == null) {
-                return ApiResponse.fail(401, "用户未登录");
-            }
-
-            String content = request.get("content");
-            if (content == null || content.trim().isEmpty()) {
-                return ApiResponse.fail(400, "评论内容不能为空");
-            }
-
-            ApplicationCommentDTO comment = commentService.updateComment(commentId, userId, content);
-            return ApiResponse.success(comment);
-        } catch (Exception e) {
-            log.error("更新评论失败，commentId: {}", commentId, e);
-            return ApiResponse.fail(500, e.getMessage());
-        }
+            @Valid @RequestBody CommentUpdateRequest request) {
+        return ApiResponse.success(commentService.updateComment(commentId, userId, request.getContent()));
     }
 
     /**
-     * 删除评论
+     * 删除评论（仅作者本人）
      */
     @DeleteMapping("/{commentId}")
-    public ApiResponse<Void> deleteComment(@PathVariable Long commentId) {
-        try {
-            Long userId = getCurrentUserId();
-            if (userId == null) {
-                return ApiResponse.fail(401, "用户未登录");
-            }
-
-            commentService.deleteComment(commentId, userId);
-            return ApiResponse.success(null);
-        } catch (Exception e) {
-            log.error("删除评论失败，commentId: {}", commentId, e);
-            return ApiResponse.fail(500, e.getMessage());
-        }
-    }
-
-    /**
-     * 获取当前用户ID
-     */
-    private Long getCurrentUserId() {
-        Object principal = org.springframework.security.core.context.SecurityContextHolder.getContext()
-                .getAuthentication().getPrincipal();
-        if (principal instanceof Long) {
-            return (Long) principal;
-        }
-        return null;
+    public ApiResponse<Void> deleteComment(@AuthenticationPrincipal Long userId, @PathVariable Long commentId) {
+        commentService.deleteComment(commentId, userId);
+        return ApiResponse.success(null);
     }
 }

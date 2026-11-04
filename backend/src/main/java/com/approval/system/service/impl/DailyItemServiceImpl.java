@@ -1,5 +1,7 @@
 package com.approval.system.service.impl;
 
+import com.approval.system.common.exception.BusinessException;
+import com.approval.system.common.enums.DailyItemStatusEnum;
 import com.approval.system.entity.DailyItem;
 import com.approval.system.mapper.DailyItemMapper;
 import com.approval.system.service.IDailyItemService;
@@ -33,7 +35,7 @@ public class DailyItemServiceImpl extends ServiceImpl<DailyItemMapper, DailyItem
                 .itemType(defaultNumber(item.getItemType(), 1))
                 .title(item.getTitle().trim())
                 .content(item.getContent())
-                .status(1)
+                .status(DailyItemStatusEnum.PENDING.getCode())
                 .priority(defaultNumber(item.getPriority(), 1))
                 .targetDate(item.getTargetDate())
                 .createdAt(now)
@@ -65,7 +67,7 @@ public class DailyItemServiceImpl extends ServiceImpl<DailyItemMapper, DailyItem
     @Transactional
     public DailyItem completeItem(Long userId, Long itemId) {
         DailyItem item = getVisibleItem(userId, itemId);
-        item.setStatus(2);
+        item.setStatus(DailyItemStatusEnum.COMPLETED.getCode());
         item.setCompletedAt(LocalDateTime.now());
         item.setUpdatedAt(LocalDateTime.now());
         this.updateById(item);
@@ -76,7 +78,7 @@ public class DailyItemServiceImpl extends ServiceImpl<DailyItemMapper, DailyItem
     @Transactional
     public DailyItem archiveItem(Long userId, Long itemId) {
         DailyItem item = getVisibleItem(userId, itemId);
-        item.setStatus(3);
+        item.setStatus(DailyItemStatusEnum.ARCHIVED.getCode());
         item.setUpdatedAt(LocalDateTime.now());
         this.updateById(item);
         return item;
@@ -88,7 +90,7 @@ public class DailyItemServiceImpl extends ServiceImpl<DailyItemMapper, DailyItem
         if (status != null) {
             queryWrapper.eq("status", status);
         } else {
-            queryWrapper.ne("status", 3);
+            queryWrapper.ne("status", DailyItemStatusEnum.ARCHIVED.getCode());
         }
         if (itemType != null) {
             queryWrapper.eq("item_type", itemType);
@@ -103,9 +105,25 @@ public class DailyItemServiceImpl extends ServiceImpl<DailyItemMapper, DailyItem
     }
 
     @Override
+    public long countTodayItems(Long userId) {
+        QueryWrapper<DailyItem> queryWrapper = visibleQuery(userId);
+        queryWrapper.eq("status", DailyItemStatusEnum.PENDING.getCode());
+        queryWrapper.eq("target_date", LocalDate.now());
+        return this.count(queryWrapper);
+    }
+
+    @Override
+    public long countOverdueItems(Long userId) {
+        QueryWrapper<DailyItem> queryWrapper = visibleQuery(userId);
+        queryWrapper.eq("status", DailyItemStatusEnum.PENDING.getCode());
+        queryWrapper.lt("target_date", LocalDate.now());
+        return this.count(queryWrapper);
+    }
+
+    @Override
     public List<DailyItem> listTodayItems(Long userId) {
         QueryWrapper<DailyItem> queryWrapper = visibleQuery(userId);
-        queryWrapper.eq("status", 1);
+        queryWrapper.eq("status", DailyItemStatusEnum.PENDING.getCode());
         queryWrapper.eq("target_date", LocalDate.now());
         queryWrapper.orderByDesc("priority");
         queryWrapper.orderByDesc("created_at");
@@ -116,7 +134,7 @@ public class DailyItemServiceImpl extends ServiceImpl<DailyItemMapper, DailyItem
     @Override
     public List<DailyItem> listOverdueItems(Long userId) {
         QueryWrapper<DailyItem> queryWrapper = visibleQuery(userId);
-        queryWrapper.eq("status", 1);
+        queryWrapper.eq("status", DailyItemStatusEnum.PENDING.getCode());
         queryWrapper.lt("target_date", LocalDate.now());
         queryWrapper.orderByAsc("target_date");
         queryWrapper.last("limit 5");
@@ -141,7 +159,7 @@ public class DailyItemServiceImpl extends ServiceImpl<DailyItemMapper, DailyItem
         queryWrapper.eq("id", itemId);
         DailyItem item = this.getOne(queryWrapper);
         if (item == null) {
-            throw new RuntimeException("No permission or item not found");
+            throw BusinessException.notFound("事项不存在或无权访问");
         }
         return item;
     }
@@ -152,7 +170,7 @@ public class DailyItemServiceImpl extends ServiceImpl<DailyItemMapper, DailyItem
             return null;
         }
         if (!userRelationService.isRelated(userId, partnerId)) {
-            throw new RuntimeException("Partner relationship is required");
+            throw BusinessException.forbidden("只能关联已互为对象的用户");
         }
         return partnerId;
     }
@@ -163,7 +181,7 @@ public class DailyItemServiceImpl extends ServiceImpl<DailyItemMapper, DailyItem
 
     private void validateTitle(String title) {
         if (title == null || title.trim().isEmpty()) {
-            throw new RuntimeException("Title is required");
+            throw BusinessException.badRequest("标题不能为空");
         }
     }
 }
