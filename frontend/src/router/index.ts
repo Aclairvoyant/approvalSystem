@@ -56,6 +56,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'game', name: 'MobileGameLobby', component: () => import('@/pages/mobile/GameLobby.vue'), meta: { tab: 'game' } },
       { path: 'game/room/:id', name: 'MobileGameRoom', component: () => import('@/pages/mobile/GameRoom.vue'), meta: { tab: 'game' } },
       { path: 'gobang/room/:id', name: 'MobileGobangRoom', component: () => import('@/pages/mobile/GobangRoom.vue'), meta: { tab: 'game' } },
+      { path: 'mahjong/room/:id', name: 'MobileMahjongRoom', component: () => import('@/pages/mobile/MahjongRoom.vue'), meta: { tab: 'game' } },
       { path: 'game/tasks', name: 'MobileGameTasks', component: () => import('@/pages/mobile/GameTasks.vue'), meta: { tab: 'game' } },
     ],
   },

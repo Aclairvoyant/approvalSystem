@@ -32,6 +32,7 @@ import {
   type GobangGame
 } from '@/services/gobangApi'
 import { useUserStore } from '@/store/modules/user'
+import { mahjongApi, MahjongRoomStatus, type MahjongRoom } from '@/services/mahjongApi'
 
 const tabs = [
   { name: 'home', label: '首页', icon: 'wap-home-o', to: '/mobile/home' },
@@ -93,8 +94,52 @@ async function checkPendingGobangInvite(): Promise<void> {
   }
 }
 
-onMounted(() => {
-  void checkPendingGobangInvite()
+function findMahjongInvite(rooms: MahjongRoom[]): MahjongRoom | null {
+  return rooms.find(room =>
+    room.gameStatus === MahjongRoomStatus.WAITING &&
+    room.invitedUserId === userStore.userId &&
+    !room.seats.some(seat => seat.userId === userStore.userId) &&
+    room.seats.some(seat => seat.type === 'EMPTY')
+  ) ?? null
+}
+
+// 对象开了麻将房间并邀请了我：提示一次（同一个房间本次打开只提示一次）
+async function checkPendingMahjongInvite(): Promise<void> {
+  if (!userStore.userId) return
+  // 已经在某个游戏房间里（包括刚接受了五子棋邀请）就不再弹麻将邀请
+  if (route.name === 'MobileMahjongRoom' || route.name === 'MobileGobangRoom' || route.name === 'MobileGameRoom') return
+
+  try {
+    const response = await mahjongApi.listRooms(MahjongRoomStatus.WAITING, 1, 20)
+    const invite = findMahjongInvite(response?.records ?? [])
+    if (!invite) return
+    const promptedKey = `mahjong-invite-${invite.id}`
+    if (sessionStorage.getItem(promptedKey)) return
+    sessionStorage.setItem(promptedKey, '1')
+
+    const owner = invite.seats.find(seat => seat.owner)
+    try {
+      await showConfirmDialog({
+        title: '上海麻将邀请',
+        message: `${owner?.name || '你的对象'} 邀请你打${invite.modeName}（${invite.seatCount} 人桌），房间号 ${invite.gameCode}`,
+        confirmButtonText: '加入',
+        cancelButtonText: '稍后'
+      })
+    } catch {
+      return
+    }
+
+    const joined = await mahjongApi.joinRoom(invite.gameCode)
+    showToast({ type: 'success', message: '已加入麻将房间' })
+    router.push(`/mobile/mahjong/room/${joined.id}`)
+  } catch (error: any) {
+    showToast({ type: 'fail', message: error.message || '麻将邀请加载失败' })
+  }
+}
+
+onMounted(async () => {
+  await checkPendingGobangInvite()
+  await checkPendingMahjongInvite()
 })
 </script>
 

@@ -12,22 +12,26 @@ export interface RoomCallbacks<M> {
 }
 
 /**
- * 飞行棋和五子棋共用的 STOMP 房间连接。
+ * 飞行棋、五子棋和麻将共用的 STOMP 房间连接。
  *
  * - 断线后由 stompjs 自己按 reconnectDelay 重连，重连成功会自动重新订阅当前房间；
  * - 每次建立连接时现读 token，换号登录或 token 刷新后不会沿用旧身份；
  * - connect() 在连接过程中被重复调用时返回同一个 Promise，连接失败会 reject，不会一直挂起；
- * - 房间号在检查连接状态之前就记下，连接恢复后能补上订阅。
+ * - 房间号在检查连接状态之前就记下，连接恢复后能补上订阅；
+ * - userQueue=true 时额外订阅 /user/queue/{channel}/{roomId}，接收只发给自己的消息（麻将手牌）。
  */
 export class StompRoomClient<M extends { type: string; senderId?: number }> {
   private client: Client | null = null
-  private subscription: StompSubscription | null = null
+  private subscriptions: StompSubscription[] = []
   private roomId: number | null = null
   private callbacks: RoomCallbacks<M> = {}
   private connecting: Promise<void> | null = null
   private heartbeat: ReturnType<typeof setInterval> | null = null
 
-  constructor(private readonly channel: 'game' | 'gobang') {}
+  constructor(
+    private readonly channel: 'game' | 'gobang' | 'mahjong',
+    private readonly options: { userQueue?: boolean } = {}
+  ) {}
 
   setCallbacks(callbacks: RoomCallbacks<M>): void {
     this.callbacks = callbacks
@@ -84,7 +88,7 @@ export class StompRoomClient<M extends { type: string; senderId?: number }> {
       onWebSocketClose: () => {
         this.stopHeartbeat()
         // 连接断开后旧订阅随之失效，重连成功时 onConnect 会重新订阅
-        this.subscription = null
+        this.subscriptions = []
         this.callbacks.onConnectionChange?.(false)
         this.settleWaiter(new Error('实时连接失败，正在重连'))
       },
@@ -137,25 +141,31 @@ export class StompRoomClient<M extends { type: string; senderId?: number }> {
   private subscribeNow(roomId: number): void {
     if (!this.client?.connected) return
     this.unsubscribe()
-    this.subscription = this.client.subscribe(`/topic/${this.channel}/${roomId}`, (frame: IMessage) => {
+    const handle = (frame: IMessage): void => {
       try {
         this.callbacks.onMessage?.(JSON.parse(frame.body) as M)
       } catch {
         this.callbacks.onError?.(new Error('收到无法解析的消息'))
       }
-    })
+    }
+    this.subscriptions.push(this.client.subscribe(`/topic/${this.channel}/${roomId}`, handle))
+    if (this.options.userQueue) {
+      this.subscriptions.push(this.client.subscribe(`/user/queue/${this.channel}/${roomId}`, handle))
+    }
     this.startHeartbeat(roomId)
     // 订阅后主动要一次最新状态，补上订阅之前错过的消息
     this.send(roomId, 'sync')
   }
 
   private unsubscribe(): void {
-    try {
-      this.subscription?.unsubscribe()
-    } catch {
-      // 连接已断开时取消订阅会失败，忽略即可
+    for (const subscription of this.subscriptions) {
+      try {
+        subscription.unsubscribe()
+      } catch {
+        // 连接已断开时取消订阅会失败，忽略即可
+      }
     }
-    this.subscription = null
+    this.subscriptions = []
   }
 
   private startHeartbeat(roomId: number): void {
