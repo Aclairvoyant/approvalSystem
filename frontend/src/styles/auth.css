@@ -1,0 +1,72 @@
+/* 登录 / 注册页共用布局 */
+
+.auth-page {
+  display: flex;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: max(56px, env(safe-area-inset-top)) 16px calc(32px + env(safe-area-inset-bottom));
+  background: var(--bg);
+}
+
+.auth-panel {
+  width: 100%;
+  max-width: 400px;
+}
+
+.auth-header {
+  padding: 0 4px 24px;
+}
+
+.auth-title {
+  color: var(--ink);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.auth-subtitle {
+  margin-top: 6px;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+.auth-card {
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.auth-card .van-field__label {
+  width: 4.5em;
+  color: var(--ink);
+}
+
+.auth-actions {
+  padding: 16px;
+}
+
+.auth-actions .van-button {
+  height: 44px;
+  font-size: 16px;
+}
+
+.auth-agreement {
+  padding: 4px 16px 0;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.auth-footer {
+  margin-top: 20px;
+  color: var(--ink-2);
+  font-size: 14px;
+  text-align: center;
+}
+
+.auth-footer a {
+  margin-left: 4px;
+  color: var(--accent);
+  font-weight: 500;
+  text-decoration: none;
+}

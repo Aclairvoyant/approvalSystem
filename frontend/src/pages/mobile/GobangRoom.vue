@@ -3,74 +3,65 @@
     <van-nav-bar :title="roomTitle" left-arrow fixed placeholder @click-left="handleBack">
       <template #right>
         <div class="nav-actions">
-          <van-icon name="replay" size="20" @click="refreshRoom" />
-          <van-icon name="question-o" size="20" @click="showRules = true" />
+          <van-icon name="replay" size="20" aria-label="刷新" @click="refreshRoom" />
+          <van-icon name="question-o" size="20" aria-label="规则" @click="showRules = true" />
         </div>
       </template>
     </van-nav-bar>
 
-    <div v-if="gobangStore.isGameWaiting" class="waiting-view">
-      <div class="waiting-panel">
-        <van-loading type="spinner" size="42" color="#0f766e" />
-        <h3>等待对方加入</h3>
+    <div v-if="!gobangStore.currentGame" class="page-state">
+      <van-loading size="24px" vertical>正在进入房间...</van-loading>
+    </div>
+
+    <div v-else-if="gobangStore.isGameWaiting" class="m-page">
+      <section class="m-card waiting-panel">
+        <h3>{{ canJoin ? `${blackName} 邀请你下五子棋` : '等对方加入' }}</h3>
         <div class="room-code">
-          <span>房间号</span>
-          <strong>{{ gobangStore.currentGame?.gameCode }}</strong>
-          <van-button size="small" type="primary" plain icon="description" @click="copyRoomCode">
-            复制
-          </van-button>
+          <strong class="tabular">{{ gobangStore.currentGame.gameCode }}</strong>
+          <van-button size="small" plain type="primary" @click="copyRoomCode">复制</van-button>
         </div>
         <div class="waiting-players">
           <div class="player">
-            <van-image round width="44" height="44" :src="blackAvatar" />
-            <span>{{ blackName }}</span>
-            <van-tag color="#111827" text-color="#fff">黑棋</van-tag>
+            <UserAvatar :src="gobangStore.currentGame.blackPlayerAvatar" :name="blackName" :size="40" />
+            <span class="player-name">{{ blackName }}</span>
+            <span class="stone stone-black" aria-label="黑棋"></span>
           </div>
-          <div class="player muted">
-            <van-image round width="44" height="44" :src="whiteAvatar" />
-            <span>{{ whiteName }}</span>
-            <van-tag color="#f3f4f6" text-color="#374151">白棋</van-tag>
+          <div class="player" :class="{ muted: !gobangStore.currentGame.whitePlayerId }">
+            <UserAvatar :src="whiteAvatarSrc" :name="whiteName" :size="40" />
+            <span class="player-name">{{ whiteName }}</span>
+            <span class="stone stone-white" aria-label="白棋"></span>
           </div>
         </div>
-        <van-button
-          v-if="gobangStore.isRoomOwner"
-          type="danger"
-          plain
-          block
-          @click="handleCancelGame"
-        >
-          取消房间
-        </van-button>
-      </div>
+        <van-button v-if="canJoin" type="primary" block :loading="joining" @click="handleJoin">加入对局</van-button>
+        <van-button v-if="gobangStore.isRoomOwner" plain block @click="handleCancelGame">取消房间</van-button>
+      </section>
     </div>
 
-    <div v-else class="room-content">
-      <section class="players-band">
-        <div class="player" :class="{ active: gobangStore.currentTurnColor === GobangColor.BLACK }">
-          <van-image round width="46" height="46" :src="blackAvatar" />
+    <div v-else class="m-page room-content">
+      <section class="m-card players-band">
+        <div class="player" :class="{ active: gobangStore.isGamePlaying && gobangStore.currentTurnColor === GobangColor.BLACK }">
+          <UserAvatar :src="gobangStore.currentGame.blackPlayerAvatar" :name="blackName" :size="40" />
           <div class="player-text">
             <strong>{{ blackName }}</strong>
-            <span>黑棋</span>
+            <span><i class="stone stone-black"></i>黑棋<b v-if="winnerColor === GobangColor.BLACK" class="win">胜</b></span>
           </div>
-          <van-tag v-if="winnerColor === GobangColor.BLACK" type="success">胜</van-tag>
         </div>
         <div class="turn-chip" :class="{ finished: gobangStore.isGameFinished }">
           {{ turnText }}
         </div>
-        <div class="player" :class="{ active: gobangStore.currentTurnColor === GobangColor.WHITE }">
-          <van-image round width="46" height="46" :src="whiteAvatar" />
+        <div class="player" :class="{ active: gobangStore.isGamePlaying && gobangStore.currentTurnColor === GobangColor.WHITE }">
+          <UserAvatar :src="whiteAvatarSrc" :name="whiteName" :size="40" />
           <div class="player-text">
             <strong>{{ whiteName }}</strong>
-            <span>白棋</span>
+            <span><i class="stone stone-white"></i>白棋<b v-if="winnerColor === GobangColor.WHITE" class="win">胜</b></span>
           </div>
-          <van-tag v-if="winnerColor === GobangColor.WHITE" type="success">胜</van-tag>
         </div>
       </section>
 
-      <section class="board-section">
+      <section class="m-card board-section">
         <GobangBoard
           :board="gobangStore.displayBoard"
-          :disabled="boardDisabled"
+          :disabled="boardDisabled || gobangStore.isPlacing"
           :current-turn="gobangStore.currentTurnColor"
           :my-color="gobangStore.myColor"
           :last-move="gobangStore.displayLastMove"
@@ -80,12 +71,13 @@
         />
       </section>
 
-      <section class="actions-section">
+      <section class="m-card actions-section">
         <div class="status-line">
           <span>{{ statusText }}</span>
           <div class="status-tools">
-            <van-tag v-if="gobangStore.isConnected" type="success">实时连接</van-tag>
-            <van-tag v-else type="warning">未连接</van-tag>
+            <span class="conn" :class="{ off: !gobangStore.isConnected }">
+              {{ gobangStore.isConnected ? '已连接' : '连接中断，正在重连' }}
+            </span>
             <van-button
               class="more-action"
               icon="ellipsis"
@@ -99,38 +91,39 @@
         </div>
       </section>
 
-      <section ref="replayRoot" class="replay-section">
+      <section ref="replayRoot" class="m-card replay-section">
         <div class="replay-header">
           <div>
             <strong>复盘</strong>
             <span>{{ replaySummary }}</span>
           </div>
           <div class="review-actions">
-            <van-tag v-if="gobangStore.aiReview" plain type="primary">{{ reviewSourceText }}</van-tag>
+            <span v-if="gobangStore.aiReview" class="review-source">{{ reviewSourceText }}</span>
             <van-button
               size="small"
               plain
               type="primary"
               :loading="gobangStore.isReviewLoading"
-              :disabled="!hasReplayMoves"
+              :disabled="!replayAvailable"
               @click="handleAiReview"
             >
-              AI复盘
+              AI 复盘
             </van-button>
           </div>
           <van-progress :percentage="gobangStore.replayProgress" :show-pivot="false" />
         </div>
         <div class="replay-controls">
-          <van-button icon="replay" size="small" :disabled="!hasReplayMoves" @click="restartReplay" />
-          <van-button icon="arrow-left" size="small" :disabled="!canStepBack" @click="stepReplay(-1)" />
+          <van-button icon="replay" size="small" aria-label="从头回放" :disabled="!replayAvailable" @click="restartReplay" />
+          <van-button icon="arrow-left" size="small" aria-label="上一步" :disabled="!canStepBack" @click="stepReplay(-1)" />
           <van-button
             :icon="isReplayPlaying ? 'pause' : 'play'"
             size="small"
             type="primary"
-            :disabled="!hasReplayMoves"
+            :aria-label="isReplayPlaying ? '暂停' : '播放'"
+            :disabled="!replayAvailable"
             @click="toggleReplay"
           />
-          <van-button icon="arrow" size="small" :disabled="!canStepForward" @click="stepReplay(1)" />
+          <van-button icon="arrow" size="small" aria-label="下一步" :disabled="!canStepForward" @click="stepReplay(1)" />
           <van-button size="small" plain :disabled="!gobangStore.isReplayMode" @click="exitReplay">
             返回棋局
           </van-button>
@@ -144,7 +137,6 @@
           <template v-if="gobangStore.currentReplayInsight">
             <div class="review-title">
               <div class="review-title-main">
-                <van-icon name="guide-o" />
                 <strong>{{ reviewSeverityText }}</strong>
               </div>
               <div v-if="currentWinRateText" class="win-rate-pill">
@@ -183,8 +175,8 @@
       show-cancel-button
       confirm-button-text="同意"
       cancel-button-text="拒绝"
-      @confirm="handleUndoResponse(true)"
-      @cancel="handleUndoResponse(false)"
+      :close-on-click-overlay="false"
+      :before-close="beforeUndoDialogClose"
     >
       <div class="dialog-copy">是否同意撤回最近一步？</div>
     </van-dialog>
@@ -198,10 +190,7 @@
       @confirm="handleResultReplay"
       @cancel="router.push('/mobile/game')"
     >
-      <div class="result-content">
-        <van-icon :name="gobangStore.isWinner ? 'medal-o' : 'smile-o'" size="58" color="#0f766e" />
-        <p>{{ resultText }}</p>
-      </div>
+      <p class="result-content">{{ resultText }}</p>
     </van-dialog>
 
     <van-action-sheet
@@ -212,16 +201,15 @@
       @select="handleMoreAction"
     />
 
-    <van-popup v-model:show="showRules" position="bottom" round class="rules-popup">
+    <van-popup v-model:show="showRules" position="bottom" round closeable>
       <div class="rules-content">
-        <h3>五子棋规则</h3>
+        <div class="m-sheet-title">五子棋规则</div>
         <ul>
           <li>黑棋先行，双方交替落子。</li>
-          <li>横、竖或斜向先连成五子的玩家获胜。</li>
+          <li>横、竖或斜向先连成五子的一方获胜。</li>
           <li>悔棋需要对方同意，同一步只能申请一次。</li>
-          <li>对局结束后可以留在房间内查看全局回放和 AI 复盘。</li>
+          <li>对局结束后可以留在房间里回放全局，或生成 AI 复盘。</li>
         </ul>
-        <van-button type="primary" block @click="showRules = false">知道了</van-button>
       </div>
     </van-popup>
   </div>
@@ -233,9 +221,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { showConfirmDialog, showToast } from 'vant'
 import { gsap } from 'gsap'
 import GobangBoard from '@/components/GobangBoard.vue'
-import { GobangColor, type GobangAiPoint } from '@/services/gobangApi'
+import UserAvatar from '@/components/UserAvatar.vue'
+import { GobangColor, GobangGameStatus, type GobangAiPoint } from '@/services/gobangApi'
 import { useGobangStore } from '@/store/modules/gobang'
 import { useUserStore } from '@/store/modules/user'
+import { copyText } from '@/utils/clipboard'
 
 interface MoreAction {
   name: string
@@ -250,7 +240,6 @@ const router = useRouter()
 const gobangStore = useGobangStore()
 const userStore = useUserStore()
 
-const defaultAvatar = 'https://fastly.jsdelivr.net/npm/@vant/assets/cat.jpeg'
 const pageRoot = ref<HTMLElement | null>(null)
 const replayRoot = ref<HTMLElement | null>(null)
 const reviewRoot = ref<HTMLElement | null>(null)
@@ -260,12 +249,24 @@ const showResultDialog = ref(false)
 const showMoreActions = ref(false)
 const isReplayPlaying = ref(false)
 const reduceMotion = ref(false)
+const joining = ref(false)
 
 let replayTimeline: gsap.core.Timeline | null = null
 let pageCtx: ReturnType<typeof gsap.context> | null = null
 let media: ReturnType<typeof gsap.matchMedia> | null = null
 
+// MobileLayout 以 path 作 key，换房间会重新挂载，这里读一次即可
 const gameId = computed(() => Number(route.params.id))
+
+// 被邀请的一方打开等待中的房间时可以直接加入
+const canJoin = computed(() => {
+  const game = gobangStore.currentGame
+  return !!game &&
+    gobangStore.isGameWaiting &&
+    !game.whitePlayerId &&
+    game.blackPlayerId !== userStore.userId &&
+    (!game.invitedPlayerId || game.invitedPlayerId === userStore.userId)
+})
 
 const roomTitle = computed(() => {
   if (gobangStore.isGameWaiting) return '等待加入'
@@ -279,11 +280,10 @@ const whiteName = computed(() => {
     gobangStore.currentGame?.invitedPlayerName ||
     '等待中'
 })
-const blackAvatar = computed(() => gobangStore.currentGame?.blackPlayerAvatar || defaultAvatar)
-const whiteAvatar = computed(() => {
+const whiteAvatarSrc = computed(() => {
   return gobangStore.currentGame?.whitePlayerAvatar ||
     gobangStore.currentGame?.invitedPlayerAvatar ||
-    defaultAvatar
+    ''
 })
 
 const winnerColor = computed(() => {
@@ -316,6 +316,8 @@ const boardDisabled = computed(() => {
 })
 
 const hasReplayMoves = computed(() => gobangStore.replayMoves.length > 0)
+// 对局进行中棋谱会增长，按钮不依赖已加载的棋谱，点击时再拉最新的
+const replayAvailable = computed(() => gobangStore.isGamePlaying || gobangStore.isGameFinished)
 const canStepBack = computed(() => gobangStore.isReplayMode && gobangStore.replayIndex > 0)
 const canStepForward = computed(() => {
   return gobangStore.isReplayMode &&
@@ -373,7 +375,7 @@ const moreActions = computed<MoreAction[]>(() => {
       name: '认输',
       key: 'surrender',
       subname: '立即结束本局',
-      color: '#dc2626',
+      color: 'var(--danger)',
       disabled
     }
   ]
@@ -386,10 +388,11 @@ watch(
   }
 )
 
+// 只有在房间里看着对局结束时才弹结果；从历史记录打开已结束的对局不弹
 watch(
-  () => gobangStore.isGameFinished,
-  isFinished => {
-    if (isFinished && !gobangStore.isReplayMode) {
+  () => gobangStore.currentGame?.gameStatus,
+  (status, previous) => {
+    if (status === GobangGameStatus.FINISHED && previous === GobangGameStatus.PLAYING && !gobangStore.isReplayMode) {
       showResultDialog.value = true
       void loadReplayMoves()
     }
@@ -444,32 +447,56 @@ async function initRoom(): Promise<void> {
     buildReplayTimeline()
   } catch (error: any) {
     showToast({ type: 'fail', message: error.message || '加载五子棋失败' })
-    router.push('/mobile/game')
+    router.replace('/mobile/game')
   }
 }
 
 async function loadReplayMoves(): Promise<void> {
-  await gobangStore.fetchReplayMoves(gameId.value)
-  buildReplayTimeline()
+  try {
+    await gobangStore.fetchReplayMoves(gameId.value)
+    buildReplayTimeline()
+  } catch (error: any) {
+    showToast({ type: 'fail', message: error.message || '棋谱加载失败' })
+  }
 }
 
 async function refreshRoom(): Promise<void> {
-  await gobangStore.fetchGameDetail(gameId.value)
-  await loadReplayMoves()
-  showToast({ type: 'success', message: '已刷新' })
+  try {
+    await gobangStore.fetchGameDetail(gameId.value)
+    await loadReplayMoves()
+    showToast({ type: 'success', message: '已刷新' })
+  } catch (error: any) {
+    showToast({ type: 'fail', message: error.message || '刷新失败' })
+  }
 }
 
 function handleBack(): void {
   router.push('/mobile/game')
 }
 
-function copyRoomCode(): void {
+async function copyRoomCode(): Promise<void> {
   const code = gobangStore.currentGame?.gameCode
   if (!code) return
+  try {
+    await copyText(code)
+    showToast({ type: 'success', message: '房间号已复制' })
+  } catch (error: any) {
+    showToast({ type: 'fail', message: error.message || '复制失败' })
+  }
+}
 
-  navigator.clipboard.writeText(code)
-    .then(() => showToast({ type: 'success', message: '房间号已复制' }))
-    .catch(() => showToast({ type: 'fail', message: '复制失败' }))
+async function handleJoin(): Promise<void> {
+  const code = gobangStore.currentGame?.gameCode
+  if (!code) return
+  joining.value = true
+  try {
+    await gobangStore.joinGame(code)
+    await gobangStore.enterGameRoom(gameId.value)
+  } catch (error: any) {
+    showToast({ type: 'fail', message: error.message || '加入失败' })
+  } finally {
+    joining.value = false
+  }
 }
 
 async function handleCancelGame(): Promise<void> {
@@ -478,10 +505,14 @@ async function handleCancelGame(): Promise<void> {
       title: '取消房间',
       message: '确定要取消这个五子棋房间吗？'
     })
+  } catch {
+    return
+  }
+  try {
     await gobangStore.cancelGame()
     router.push('/mobile/game')
-  } catch {
-    // User cancelled.
+  } catch (error: any) {
+    showToast({ type: 'fail', message: error.message || '取消失败' })
   }
 }
 
@@ -517,14 +548,24 @@ function handleMoreAction(action: MoreAction): void {
   }
 }
 
-function handleUndoResponse(accepted: boolean): void {
-  gobangStore.respondUndo(accepted)
-  showUndoDialog.value = false
+// 发送失败（断线）时弹窗保持打开，可以重试
+function beforeUndoDialogClose(action: string): boolean {
+  return gobangStore.respondUndo(action === 'confirm')
 }
 
 async function ensureFreshReplayMoves(): Promise<boolean> {
-  await loadReplayMoves()
-  return gobangStore.replayMoves.length > 0
+  try {
+    await gobangStore.ensureReplayMoves()
+    buildReplayTimeline()
+  } catch (error: any) {
+    showToast({ type: 'fail', message: error.message || '棋谱加载失败' })
+    return false
+  }
+  if (gobangStore.replayMoves.length === 0) {
+    showToast({ message: '还没有落子', position: 'top' })
+    return false
+  }
+  return true
 }
 
 async function restartReplay(): Promise<void> {
@@ -542,7 +583,7 @@ async function handleResultReplay(): Promise<void> {
 }
 
 async function handleAiReview(): Promise<void> {
-  if (!hasReplayMoves.value && !await ensureFreshReplayMoves()) return
+  if (!await ensureFreshReplayMoves()) return
   if (isMimoReviewSource(gobangStore.aiReview?.source)) {
     showToast({ message: 'AI复盘已生成', position: 'top' })
     return
@@ -574,7 +615,7 @@ async function handleAiReview(): Promise<void> {
 }
 
 async function toggleReplay(): Promise<void> {
-  if (!hasReplayMoves.value && !await ensureFreshReplayMoves()) return
+  if (!gobangStore.isReplayMode && !await ensureFreshReplayMoves()) return
 
   if (!gobangStore.isReplayMode) {
     await restartReplay()
@@ -696,11 +737,10 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .gobang-room {
-  min-height: 100vh;
-  background: #f5f7f8;
-  padding-bottom: 20px;
+  min-height: 100%;
+  background: var(--bg);
 }
 
 .nav-actions {
@@ -709,159 +749,160 @@ onUnmounted(() => {
   gap: 14px;
 }
 
-.waiting-view {
-  min-height: calc(100vh - 46px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 18px;
-}
-
-.waiting-panel,
-.players-band,
-.board-section,
-.actions-section,
-.replay-section {
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 8px rgba(15, 23, 42, 0.06);
+.page-state {
+  padding-top: 96px;
+  text-align: center;
 }
 
 .waiting-panel {
-  width: 100%;
-  padding: 24px 18px;
+  padding: 24px 16px;
   text-align: center;
+}
 
-  h3 {
-    margin: 16px 0;
-    color: #111827;
-    font-size: 18px;
-  }
+.waiting-panel h3 {
+  color: var(--ink);
+  font-size: 18px;
+}
+
+.waiting-panel .van-button + .van-button {
+  margin-top: 10px;
 }
 
 .room-code {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 12px;
-  margin-bottom: 18px;
-  background: #f3f4f6;
-  border-radius: 8px;
+  gap: 12px;
+  margin: 16px 0 20px;
+}
 
-  span {
-    color: #6b7280;
-    font-size: 13px;
-  }
-
-  strong {
-    color: #0f766e;
-    font-size: 22px;
-    letter-spacing: 3px;
-  }
+.room-code strong {
+  color: var(--ink);
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
 }
 
 .waiting-players {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 
 .player {
-  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-
-  &.muted {
-    opacity: 0.72;
-  }
-
-  > span {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 14px;
-    color: #111827;
-  }
+  gap: 8px;
+  min-width: 0;
 }
 
-.room-content {
-  padding: 12px;
+.player.muted {
+  opacity: 0.6;
+}
+
+.player-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stone {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  margin-right: 4px;
+  border-radius: 50%;
+  vertical-align: -1px;
+}
+
+.stone-black {
+  background: #1f1f1f;
+}
+
+.stone-white {
+  border: 1px solid var(--rule-strong);
+  background: #fff;
+}
+
+.room-content > * + * {
+  margin-top: 10px;
 }
 
 .players-band {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
-  padding: 12px;
-  margin-bottom: 12px;
+  gap: 8px;
+  padding: 10px;
+}
 
-  .player {
-    padding: 8px;
-    border: 1px solid #eef0f2;
-    border-radius: 8px;
+.players-band .player {
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+}
 
-    &.active {
-      border-color: #0f766e;
-      background: #ecfdf5;
-    }
-  }
+.players-band .player.active {
+  border-color: var(--rule);
+  background: var(--surface-2);
 }
 
 .player-text {
-  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
+}
 
-  strong,
-  span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+.player-text strong,
+.player-text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
-  strong {
-    color: #111827;
-    font-size: 14px;
-  }
+.player-text strong {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
 
-  span {
-    color: #6b7280;
-    font-size: 12px;
-  }
+.player-text span {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.win {
+  margin-left: 6px;
+  color: var(--ok-ink);
+  font-weight: 600;
 }
 
 .turn-chip {
-  min-width: 72px;
-  padding: 6px 8px;
-  border-radius: 999px;
-  text-align: center;
-  color: #0f766e;
-  background: #ccfbf1;
+  color: var(--accent);
   font-size: 12px;
   font-weight: 600;
+  text-align: center;
+}
 
-  &.finished {
-    color: #6b7280;
-    background: #f3f4f6;
-  }
+.turn-chip.finished {
+  color: var(--ink-3);
 }
 
 .board-section {
-  padding: 12px;
-  margin-bottom: 12px;
+  padding: 10px;
 }
 
 .actions-section,
 .replay-section {
   padding: 14px;
-  margin-bottom: 12px;
 }
 
 .status-line {
@@ -869,19 +910,28 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  color: #374151;
+  color: var(--ink);
   font-size: 14px;
+}
 
-  > span {
-    min-width: 0;
-    flex: 1;
-  }
+.status-line > span {
+  flex: 1;
+  min-width: 0;
 }
 
 .status-tools {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.conn {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.conn.off {
+  color: var(--danger);
 }
 
 .more-action {
@@ -896,117 +946,110 @@ onUnmounted(() => {
   align-items: start;
   gap: 10px;
   margin-bottom: 12px;
+}
 
-  > div {
-    min-width: 86px;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
+.replay-header > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
 
-    strong {
-      font-size: 15px;
-      color: #111827;
-    }
+.replay-header strong {
+  color: var(--ink);
+  font-size: 15px;
+}
 
-    span {
-      color: #6b7280;
-      font-size: 12px;
-    }
-  }
+.replay-header span {
+  color: var(--ink-3);
+  font-size: 12px;
+}
 
-  .van-progress {
-    grid-column: 1 / -1;
-  }
+.replay-header .van-progress {
+  grid-column: 1 / -1;
 }
 
 .review-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 8px;
+}
+
+.review-source {
+  color: var(--ink-3);
+  font-size: 12px;
 }
 
 .replay-controls {
   display: flex;
   gap: 8px;
-
-  .van-button {
-    flex: 1;
-  }
 }
 
+.replay-controls .van-button {
+  flex: 1;
+}
+
+.replay-controls .van-button:last-child {
+  flex: 1.8;
+  white-space: nowrap;
+}
+
+/* 复盘说明：中性底色，用文字标明轻重，颜色只落在标题上 */
 .review-panel {
   margin-top: 12px;
   padding: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #f8fafc;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
 
-  &.severity-critical {
-    border-color: rgba(220, 38, 38, 0.25);
-    background: #fef2f2;
-  }
-
-  &.severity-warning {
-    border-color: rgba(37, 99, 235, 0.22);
-    background: #eff6ff;
-  }
-
-  &.severity-info {
-    border-color: rgba(15, 118, 110, 0.24);
-    background: #f0fdfa;
-  }
-
-  p {
-    margin: 8px 0 0;
-    color: #374151;
-    font-size: 13px;
-    line-height: 1.6;
-  }
+.review-panel p {
+  margin-top: 6px;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .review-title {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
   gap: 6px;
-  color: #111827;
+  color: var(--ink);
   font-size: 14px;
 }
 
-.review-title-main {
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.severity-critical .review-title-main strong {
+  color: var(--danger);
+}
+
+.severity-warning .review-title-main strong {
+  color: var(--accent);
 }
 
 .win-rate-pill {
-  flex: 0 0 auto;
   display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 7px;
-  border-radius: 999px;
-  background: rgba(15, 118, 110, 0.1);
-  color: #0f766e;
-  font-size: 11px;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--ink-3);
+  font-size: 12px;
+}
 
-  strong {
-    font-size: 12px;
-  }
+.win-rate-pill strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .best-rate-line {
-  margin-top: 7px;
-  color: #dc2626;
+  margin-top: 6px;
+  color: var(--danger);
   font-size: 12px;
-  font-weight: 600;
 }
 
 .review-empty {
-  color: #6b7280;
+  color: var(--ink-3);
   font-size: 13px;
   text-align: center;
 }
@@ -1016,86 +1059,54 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
+}
 
-  button {
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
-    padding: 6px 8px;
-    background: #fff;
-    color: #374151;
-    font-size: 12px;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
+.suggestion-list button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 12px;
+}
 
-    span {
-      color: #0f766e;
-      font-weight: 600;
-    }
-
-    strong {
-      color: #111827;
-      font-weight: 600;
-    }
-  }
+.suggestion-list strong {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .dialog-copy {
-  padding: 18px;
+  padding: 16px 24px 20px;
+  color: var(--ink-2);
   text-align: center;
-  color: #374151;
 }
 
 .result-content {
-  padding: 26px 18px;
+  padding: 8px 24px 20px;
+  color: var(--ink-2);
+  font-size: 14px;
   text-align: center;
-
-  p {
-    margin: 12px 0 0;
-    color: #374151;
-  }
-}
-
-.rules-popup {
-  height: 52%;
 }
 
 .rules-content {
-  height: 100%;
-  padding: 18px;
-  display: flex;
-  flex-direction: column;
+  padding-bottom: calc(20px + env(safe-area-inset-bottom));
+}
 
-  h3 {
-    margin: 0 0 12px;
-    text-align: center;
-    color: #111827;
-    font-size: 18px;
-  }
-
-  ul {
-    flex: 1;
-    margin: 0;
-    padding-left: 20px;
-    color: #374151;
-    line-height: 1.9;
-    font-size: 14px;
-  }
+.rules-content ul {
+  margin: 0;
+  padding: 4px 20px 0 36px;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.9;
 }
 
 @media (max-width: 360px) {
-  .room-content {
-    padding: 8px;
-  }
-
   .players-band {
-    gap: 6px;
-    padding: 8px;
-  }
-
-  .turn-chip {
-    min-width: 62px;
-    font-size: 11px;
+    gap: 4px;
+    padding: 6px;
   }
 
   .replay-controls {

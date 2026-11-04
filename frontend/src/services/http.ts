@@ -76,7 +76,8 @@ instance.interceptors.response.use(
     const data = response.data
 
     if (data?.code === 200) {
-      return Object.prototype.hasOwnProperty.call(data, 'data') ? data.data : data
+      // 后端开启了 non_null，data 为 null 时整个字段会被省略，这里统一还原成 null
+      return data.data ?? null
     }
 
     if (data?.code === 401) {
@@ -105,9 +106,17 @@ instance.interceptors.response.use(
       return Promise.reject(new Error(message || FORBIDDEN_MESSAGE))
     }
 
-    return Promise.reject(error)
+    return Promise.reject(new Error(message || describeTransportError(error, status)))
   }
 )
+
+function describeTransportError(error: any, status?: number): string {
+  if (error?.code === 'ECONNABORTED' || error?.code === 'ETIMEDOUT') return '请求超时，请稍后重试'
+  if (error?.code === 'ERR_NETWORK' || !error?.response) return '网络连接失败，请检查网络'
+  if (status === 413) return '文件太大，无法上传'
+  if (status && status >= 500) return '服务器出错了，请稍后重试'
+  return REQUEST_FAILED_MESSAGE
+}
 
 const http = {
   get<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T> {

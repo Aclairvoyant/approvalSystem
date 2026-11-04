@@ -561,7 +561,7 @@ onUnmounted(() => {
   }
 
   &:focus-visible {
-    outline: 2px solid #0f766e;
+    outline: 2px solid var(--accent);
     outline-offset: -2px;
   }
 }
@@ -651,20 +651,21 @@ onUnmounted(() => {
   pointer-events: none;
   box-shadow: 0 2px 6px rgba(15, 23, 42, 0.22);
 
+  /* 建议点按类型区分，颜色取自设计 token：必杀 / 防守 / 更优 / 说明 */
   &.type-winning-move {
-    background: #dc2626;
+    background: var(--danger);
   }
 
   &.type-block {
-    background: #2563eb;
+    background: var(--accent);
   }
 
   &.type-better-move {
-    background: #0f766e;
+    background: var(--ok-ink);
   }
 
   &.type-commentary {
-    background: #7c3aed;
+    background: var(--ink-2);
   }
 }
 

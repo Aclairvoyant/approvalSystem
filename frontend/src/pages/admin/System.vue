@@ -1,49 +1,35 @@
 <template>
-  <div class="admin-page admin-page-narrow system-page">
+  <div class="admin-page system-page">
     <div class="admin-page-header">
       <div class="admin-page-heading">
-        <div class="admin-page-kicker">SYSTEM</div>
         <h1 class="admin-page-title">系统配置</h1>
-        <p class="admin-page-subtitle">
-          管理发件邮箱与语音大模型运行配置，敏感字段仅显示脱敏状态。
-        </p>
+        <p class="admin-page-subtitle">发件邮箱和语音大模型的运行配置；密码和密钥只显示脱敏后的结果</p>
       </div>
       <div class="admin-page-actions">
         <a-button :loading="loading" @click="fetchConfig">
           <template #icon><icon-refresh /></template>
-          刷新配置
+          刷新
         </a-button>
       </div>
     </div>
 
-    <a-alert
-      v-if="error"
-      class="system-alert"
-      type="error"
-      :message="error"
-      show-icon
-    />
+    <!-- Arco Alert 没有 message 属性，文字要放在 title 或默认插槽里 -->
+    <a-alert v-if="error" class="system-alert" type="error" :title="error" show-icon>
+      <template #action>
+        <a-button size="mini" @click="fetchConfig">重试</a-button>
+      </template>
+    </a-alert>
 
     <a-spin class="system-spin" :loading="loading">
       <template v-if="emailSettings && voiceSettings && !error">
-        <section class="admin-panel admin-panel-padded system-summary" :class="summaryClass">
-          <div class="summary-icon">
-            <component :is="summaryIcon" />
+        <section class="admin-panel system-summary">
+          <div class="summary-row">
+            <span class="summary-name">发件邮箱</span>
+            <span :class="emailReady ? 'state-ok' : 'state-todo'">{{ emailReady ? '可以发送' : '待完善：需要 SMTP 主机和授权码' }}</span>
           </div>
-          <div class="summary-body">
-            <div class="summary-title">{{ summaryTitle }}</div>
-            <div class="summary-copy">{{ summaryCopy }}</div>
-            <div class="summary-tags">
-              <a-tag :color="emailSettings.passwordConfigured ? 'green' : 'orange'">
-                邮箱 {{ emailSettings.passwordConfigured ? '已配置' : '待配置' }}
-              </a-tag>
-              <a-tag :color="voiceSettings.enabled ? 'green' : 'gray'">
-                语音 {{ voiceSettings.enabled ? '已启用' : '已停用' }}
-              </a-tag>
-              <a-tag :color="voiceSettings.asrApiKeyConfigured && voiceSettings.chatApiKeyConfigured ? 'green' : 'orange'">
-                模型 Key {{ voiceSettings.asrApiKeyConfigured && voiceSettings.chatApiKeyConfigured ? '已配置' : '待配置' }}
-              </a-tag>
-            </div>
+          <div class="summary-row">
+            <span class="summary-name">语音大模型</span>
+            <span :class="voiceReady ? 'state-ok' : 'state-todo'">{{ voiceStateText }}</span>
           </div>
         </section>
 
@@ -52,15 +38,10 @@
             <section class="admin-panel admin-panel-padded settings-panel">
               <div class="settings-panel-header">
                 <div>
-                  <div class="settings-title">
-                    <icon-thunderbolt />
-                    <span>邮件发送</span>
-                  </div>
-                  <div class="settings-subtitle">SMTP 发件账号</div>
+                  <div class="settings-title">SMTP 发件账号</div>
+                  <div class="settings-subtitle">用于注册验证码和审批邮件通知</div>
                 </div>
-                <a-tag :color="emailSettings.passwordConfigured ? 'green' : 'orange'">
-                  {{ emailSettings.passwordMasked || '未配置密码' }}
-                </a-tag>
+                <span class="key-state tabular">授权码 {{ emailSettings.passwordMasked || '未配置' }}</span>
               </div>
 
               <a-form :model="emailForm" layout="vertical">
@@ -98,7 +79,6 @@
 
               <div class="settings-actions">
                 <a-button type="primary" :loading="savingEmail" @click="saveEmailSettings">
-                  <template #icon><icon-check-circle /></template>
                   保存发件邮箱
                 </a-button>
               </div>
@@ -109,19 +89,12 @@
             <section class="admin-panel admin-panel-padded settings-panel">
               <div class="settings-panel-header">
                 <div>
-                  <div class="settings-title">
-                    <icon-robot />
-                    <span>模型服务</span>
-                  </div>
-                  <div class="settings-subtitle">OpenAI 兼容接口</div>
+                  <div class="settings-title">模型服务</div>
+                  <div class="settings-subtitle">语音转文字（ASR）和整理申请内容（Chat），均为 OpenAI 兼容接口</div>
                 </div>
-                <div class="settings-tag-group">
-                  <a-tag :color="voiceSettings.asrApiKeyConfigured ? 'green' : 'orange'">
-                    ASR {{ voiceSettings.asrApiKeyMasked || '未配置' }}
-                  </a-tag>
-                  <a-tag :color="voiceSettings.chatApiKeyConfigured ? 'green' : 'orange'">
-                    Chat {{ voiceSettings.chatApiKeyMasked || '未配置' }}
-                  </a-tag>
+                <div class="key-state tabular">
+                  <div>ASR {{ voiceSettings.asrApiKeyMasked || '未配置' }}</div>
+                  <div>Chat {{ voiceSettings.chatApiKeyMasked || '未配置' }}</div>
                 </div>
               </div>
 
@@ -194,14 +167,10 @@
                 </div>
               </a-form>
 
-              <div class="security-note">
-                <icon-safe />
-                <span>保存时留空密钥会保留当前值，后台不会把原始密钥返回给页面。</span>
-              </div>
+              <p class="security-note">密钥留空保存时沿用当前值；后台不会把原始密钥返回给页面。</p>
 
               <div class="settings-actions">
                 <a-button type="primary" :loading="savingVoice" @click="saveVoiceSettings">
-                  <template #icon><icon-check-circle /></template>
                   保存语音大模型
                 </a-button>
               </div>
@@ -227,15 +196,7 @@ import {
   type VoiceModelSettingsResponse,
   type VoiceModelSettingsUpdateRequest
 } from '@/services/api'
-import {
-  IconCheckCircle,
-  IconCloseCircle,
-  IconExclamationCircle,
-  IconRefresh,
-  IconRobot,
-  IconSafe,
-  IconThunderbolt
-} from '@arco-design/web-vue/es/icon'
+import { IconRefresh } from '@arco-design/web-vue/es/icon'
 
 const activeTab = ref('email')
 const loading = ref(false)
@@ -302,30 +263,10 @@ const voiceReady = computed(() => Boolean(
   voiceSettings.value?.chatBaseUrl
 ))
 
-const summaryTitle = computed(() => {
-  if (!emailReady.value && !voiceReady.value) return '系统配置待完善'
-  if (!emailReady.value) return '发件邮箱待完善'
-  if (!voiceReady.value) return '语音大模型待完善'
-  return '系统配置可用'
-})
-
-const summaryCopy = computed(() => {
-  if (!emailReady.value && !voiceReady.value) return '邮件与语音模型都需要补齐运行配置。'
-  if (!emailReady.value) return '语音配置可用，邮件发件账号仍需补齐。'
-  if (!voiceReady.value) return '邮件配置可用，语音模型仍需补齐或启用。'
-  return '邮件发送与语音模型均已具备运行所需配置。'
-})
-
-const summaryClass = computed(() => {
-  if (emailReady.value && voiceReady.value) return 'is-configured'
-  if (!emailReady.value && !voiceReady.value) return 'is-disabled'
-  return 'is-unconfigured'
-})
-
-const summaryIcon = computed(() => {
-  if (emailReady.value && voiceReady.value) return IconCheckCircle
-  if (!emailReady.value && !voiceReady.value) return IconCloseCircle
-  return IconExclamationCircle
+const voiceStateText = computed(() => {
+  if (voiceReady.value) return '可以使用'
+  if (!voiceSettings.value?.enabled) return '已停用'
+  return '待完善：需要 ASR 和 Chat 的地址与密钥'
 })
 
 const normalizeEmail = (value?: string): string => (value || '').trim().toLowerCase()
@@ -471,10 +412,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.system-page {
-  padding-bottom: 8px;
-}
-
 .system-alert {
   margin-bottom: 16px;
 }
@@ -485,60 +422,34 @@ onMounted(() => {
 }
 
 .system-summary {
-  display: flex;
-  gap: 16px;
   margin-bottom: 16px;
-  border-left: 4px solid #d7dce5;
 }
 
-.system-summary.is-configured {
-  border-left-color: #00b42a;
-}
-
-.system-summary.is-unconfigured {
-  border-left-color: #ff7d00;
-}
-
-.system-summary.is-disabled {
-  border-left-color: #86909c;
-}
-
-.summary-icon {
+.summary-row {
   display: flex;
-  width: 48px;
-  height: 48px;
-  flex: 0 0 48px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: #2563eb;
-  background: #eef4ff;
-  font-size: 24px;
-}
-
-.summary-body {
-  min-width: 0;
-}
-
-.summary-title {
-  color: var(--admin-text);
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1.35;
-}
-
-.summary-copy {
-  margin-top: 6px;
-  color: var(--admin-text-muted);
+  align-items: baseline;
+  gap: 16px;
+  padding: 12px 20px;
   font-size: 14px;
-  line-height: 1.6;
 }
 
-.summary-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
+.summary-row + .summary-row {
+  border-top: 1px solid var(--admin-border);
+}
+
+.summary-name {
+  flex: 0 0 96px;
+  color: var(--admin-text-muted);
+}
+
+.state-ok {
+  color: var(--ok-ink);
+  font-weight: 500;
+}
+
+.state-todo {
+  color: var(--admin-text);
+  font-weight: 500;
 }
 
 .settings-tabs :deep(.arco-tabs-content) {
@@ -558,29 +469,23 @@ onMounted(() => {
 }
 
 .settings-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   color: var(--admin-text);
-  font-size: 16px;
-  font-weight: 650;
-}
-
-.settings-title svg {
-  color: #2563eb;
-}
-
-.settings-tag-group {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .settings-subtitle {
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--admin-text-muted);
   font-size: 13px;
+}
+
+.key-state {
+  color: var(--admin-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: right;
 }
 
 .settings-form-grid {
@@ -590,22 +495,9 @@ onMounted(() => {
 }
 
 .security-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 4px;
-  padding: 10px;
-  border-radius: 6px;
-  color: #4e5969;
-  background: #f7f8fa;
+  color: var(--admin-text-muted);
   font-size: 13px;
   line-height: 1.5;
-}
-
-.security-note svg {
-  flex: 0 0 auto;
-  margin-top: 2px;
-  color: #00b42a;
 }
 
 .settings-actions {
@@ -615,20 +507,22 @@ onMounted(() => {
 }
 
 @media (max-width: 768px) {
-  .system-summary {
-    gap: 12px;
-    padding: 16px;
+  .summary-row {
+    flex-direction: column;
+    gap: 2px;
+    padding: 12px 16px;
   }
 
-  .summary-icon {
-    width: 42px;
-    height: 42px;
-    flex-basis: 42px;
-    font-size: 22px;
+  .summary-name {
+    flex-basis: auto;
   }
 
   .settings-panel-header {
     flex-direction: column;
+  }
+
+  .key-state {
+    text-align: left;
   }
 
   .settings-form-grid {

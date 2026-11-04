@@ -1,1605 +1,395 @@
 <template>
-  <div class="application-detail-page">
-    <!-- 顶部导航 -->
-    <van-nav-bar
-      title="申请详情"
-      left-arrow
-      @click-left="router.back()"
-    />
+  <div class="detail-page">
+    <van-nav-bar title="申请详情" left-arrow fixed placeholder @click-left="goBack" />
 
-    <!-- 加载中 -->
-    <van-loading v-if="loading" class="loading-state" size="24px" vertical>
-      加载中...
-    </van-loading>
+    <div v-if="loading" class="page-state">
+      <van-loading size="24px" vertical>加载中...</van-loading>
+    </div>
 
-    <template v-else>
-      <!-- 状态卡片 -->
-      <div class="status-card">
-        <div class="status-header">
-          <span class="title">{{ application?.title }}</span>
-          <van-tag :type="getStatusType(application?.status)" size="medium">
-            {{ getStatusText(application?.status) }}
-          </van-tag>
+    <van-empty v-else-if="!application" class="page-state" image="error" :description="loadError || '申请不存在'">
+      <van-button size="small" type="primary" @click="fetchAll">重新加载</van-button>
+    </van-empty>
+
+    <div v-else class="m-page">
+      <!-- 概要 -->
+      <section class="m-card m-card--pad">
+        <div class="summary-head">
+          <h1 class="summary-title">{{ application.title || '语音申请' }}</h1>
+          <StatusTag :status="application.status" />
         </div>
-        <div class="status-time">
-          <van-icon name="clock-o" />
-          <span>{{ formatDate(application?.createdAt) }}</span>
+        <div class="m-meta summary-meta">
+          <span>{{ application.applicantName || '申请人' }} → {{ application.approverName || '审批人' }}</span>
+          <span>{{ formatDateTime(application.createdAt) }}</span>
         </div>
-      </div>
 
-      <!-- 基本信息 -->
-      <van-cell-group inset class="info-group">
-        <van-cell title="事项描述" :label="application?.description" />
-        <van-cell title="备注" :label="application?.remark || '无'" />
-        <van-cell title="审批人ID" :value="application?.approverId" />
-      </van-cell-group>
+        <p v-if="application.status === ApplicationStatus.REJECTED && application.rejectReason" class="m-note reject-note">
+          <b>驳回原因：</b>{{ application.rejectReason }}
+        </p>
+
+        <dl class="fields">
+          <div v-if="application.description" class="field">
+            <dt>说明</dt>
+            <dd>{{ application.description }}</dd>
+          </div>
+          <div v-if="application.remark" class="field">
+            <dt>备注</dt>
+            <dd>{{ application.remark }}</dd>
+          </div>
+        </dl>
+      </section>
 
       <!-- 语音申请 -->
-      <van-cell-group v-if="hasVoiceSection" inset class="info-group">
-        <van-cell title="语音申请" />
-        <div class="voice-application-section">
-          <div
-            v-for="att in applicationAudioAttachments"
-            :key="att.attachmentId || att.fileUrl"
-            class="voice-audio-item"
-          >
-            <div class="voice-audio-title">
-              <van-icon name="volume-o" />
-              <span>{{ att.fileName || '语音内容' }}</span>
-            </div>
-            <audio
-              class="voice-audio-player"
-              :src="att.fileUrl"
-              controls
-              preload="none"
-            ></audio>
-          </div>
-
-          <div v-if="voiceTranscript" class="voice-transcript-box">
-            <div class="voice-transcript-label">
-              <van-icon name="chat-o" />
-              <span>转写文本</span>
-            </div>
-            <div class="voice-transcript-text">{{ voiceTranscript }}</div>
-          </div>
-
-          <van-button
-            class="voice-transcribe-button"
-            type="primary"
-            plain
-            block
-            icon="chat-o"
-            :loading="transcribingVoice"
-            @click="handleTranscribeVoice"
-          >
-            转文字
-          </van-button>
+      <section v-if="isVoiceApplication" class="m-card m-card--pad">
+        <h2 class="m-section-title">语音内容</h2>
+        <div v-for="att in applicationAudio" :key="att.attachmentId || att.fileUrl" class="audio-row">
+          <audio :src="att.fileUrl" controls preload="none"></audio>
         </div>
-      </van-cell-group>
+        <p v-if="applicationAudio.length === 0" class="muted">音频还没有上传完成</p>
 
-      <!-- 申请附件 -->
-      <van-cell-group v-if="applicationImages.length > 0 || applicationFiles.length > 0" inset class="info-group">
-        <van-cell title="申请附件" />
-        <div class="attachment-section">
-          <!-- 图片预览 -->
-          <div v-if="applicationImages.length > 0" class="image-preview">
-            <van-image
-              v-for="(img, index) in applicationImages"
-              :key="img.attachmentId"
-              width="80"
-              height="80"
-              fit="cover"
-              :src="img.fileUrl"
-              @click="previewImages(applicationImages, index)"
-            />
-          </div>
-          <!-- 其他文件 -->
-          <div v-for="att in applicationFiles" :key="att.attachmentId" class="file-item">
-            <van-icon name="description" />
-            <a :href="att.fileUrl" target="_blank">{{ att.fileName }}</a>
-          </div>
+        <div v-if="voiceTranscript" class="transcript">
+          <div class="transcript-label">转写文字</div>
+          <p>{{ voiceTranscript }}</p>
         </div>
-      </van-cell-group>
 
-      <!-- 审批附件 -->
-      <van-cell-group v-if="approvalImages.length > 0 || approvalFiles.length > 0 || approvalAudioAttachments.length > 0" inset class="info-group">
-        <van-cell title="审批附件" />
-        <div class="attachment-section">
-          <!-- 图片预览 -->
-          <div
-            v-for="att in approvalAudioAttachments"
-            :key="att.attachmentId || att.fileUrl"
-            class="voice-audio-item"
-          >
-            <div class="voice-audio-title">
-              <van-icon name="volume-o" />
-              <span>{{ att.fileName || '语音回复' }}</span>
-            </div>
-            <audio
-              class="voice-audio-player"
-              :src="att.fileUrl"
-              controls
-              preload="none"
-            ></audio>
-          </div>
-          <div v-if="approvalImages.length > 0" class="image-preview">
-            <van-image
-              v-for="(img, index) in approvalImages"
-              :key="img.attachmentId"
-              width="80"
-              height="80"
-              fit="cover"
-              :src="img.fileUrl"
-              @click="previewImages(approvalImages, index)"
-            />
-          </div>
-          <!-- 其他文件 -->
-          <div v-for="att in approvalFiles" :key="att.attachmentId" class="file-item">
-            <van-icon name="description" />
-            <a :href="att.fileUrl" target="_blank">{{ att.fileName }}</a>
-          </div>
+        <van-button
+          v-if="applicationAudio.length > 0"
+          class="transcribe-btn"
+          size="small"
+          plain
+          icon="chat-o"
+          :loading="transcribing"
+          @click="handleTranscribe"
+        >
+          {{ voiceTranscript ? '重新转文字' : '转文字' }}
+        </van-button>
+      </section>
+
+      <!-- 附件 -->
+      <section v-if="applicationImages.length || applicationFiles.length" class="m-card m-card--pad">
+        <h2 class="m-section-title">申请附件</h2>
+        <AttachmentList :images="applicationImages" :files="applicationFiles" />
+      </section>
+
+      <section v-if="approvalImages.length || approvalFiles.length || approvalAudio.length" class="m-card m-card--pad">
+        <h2 class="m-section-title">审批附件</h2>
+        <div v-for="att in approvalAudio" :key="att.attachmentId || att.fileUrl" class="audio-row">
+          <audio :src="att.fileUrl" controls preload="none"></audio>
         </div>
-      </van-cell-group>
+        <AttachmentList :images="approvalImages" :files="approvalFiles" />
+      </section>
 
-      <!-- 语音通知 -->
-      <van-cell-group v-if="canSendVoiceNotification" inset class="info-group">
-        <van-cell title="语音通知">
-          <template #label v-if="!userStore.voiceNotificationEnabled">
-            <span style="color: #ff7d00; font-size: 12px;">
-              ⚠️ 未开通权限，请联系管理员
-            </span>
-          </template>
-        </van-cell>
-        <div class="voice-notification-section">
-          <van-button
-            type="warning"
-            block
-            icon="phone-o"
-            @click="handleSendVoiceNotification"
-            :loading="sendingVoiceNotification"
-            :disabled="!userStore.voiceNotificationEnabled"
-          >
-            {{ userStore.voiceNotificationEnabled ? '发送语音通知给审批人' : '语音通知权限未开通' }}
-          </van-button>
+      <!-- 申请人：电话提醒对方 -->
+      <section v-if="canSendVoiceNotification" class="m-card m-card--pad remind">
+        <div>
+          <h2 class="m-section-title">提醒对方</h2>
+          <p class="muted">
+            {{ userStore.voiceNotificationEnabled ? '给审批人打一个语音电话，提醒尽快处理' : '语音通知未开通，需要管理员为你开启' }}
+          </p>
         </div>
-      </van-cell-group>
+        <van-button
+          size="small"
+          plain
+          type="primary"
+          icon="phone-o"
+          :loading="sendingVoiceNotification"
+          :disabled="!userStore.voiceNotificationEnabled"
+          @click="handleSendVoiceNotification"
+        >
+          打电话
+        </van-button>
+      </section>
 
-      <!-- 审批操作 -->
-      <van-cell-group v-if="canApprove" inset class="info-group">
-        <van-cell title="审批操作" />
-        <div class="approval-form">
-          <van-field
-            v-model="approvalDetail"
-            type="textarea"
-            placeholder="请输入审批意见"
-            rows="3"
-            autosize
-          />
-          <van-field name="uploader" label="上传附件">
-            <template #input>
-              <van-uploader
-                v-model="approvalFileList"
-                :max-count="5"
-                :max-size="10 * 1024 * 1024"
-                accept="image/*,.pdf,.doc,.docx"
-                @oversize="onOversize"
-              />
-            </template>
-          </van-field>
-          <van-field name="voiceReply" label="语音回复">
-            <template #input>
-              <div class="approval-voice-reply">
-                <div class="approval-voice-actions">
-                  <van-button
-                    size="small"
-                    round
-                    plain
-                    type="primary"
-                    :icon="approvalVoiceRecording ? 'stop-circle-o' : 'volume-o'"
-                    :loading="approvalVoiceProcessing"
-                    :disabled="approvalVoiceProcessing || !recordingAvailable"
-                    @click="toggleApprovalVoiceRecording"
-                  >
-                    {{ approvalVoiceRecording ? formatDuration(approvalVoiceSeconds) : '录制' }}
-                  </van-button>
-                  <van-uploader
-                    v-model="approvalVoiceFileList"
-                    :max-count="1"
-                    :max-size="10 * 1024 * 1024"
-                    accept="audio/*,.wav,.mp3,.m4a,.aac,.webm,.ogg"
-                    :after-read="handleApprovalVoiceFileRead"
-                    @oversize="onOversize"
-                  >
-                    <van-button
-                      size="small"
-                      round
-                      plain
-                      icon="plus"
-                      :loading="approvalVoiceProcessing"
-                    >
-                      上传
-                    </van-button>
-                  </van-uploader>
-                  <van-button
-                    v-if="approvalVoiceBlob"
-                    size="small"
-                    round
-                    plain
-                    icon="delete-o"
-                    @click="clearApprovalVoiceReply"
-                  >
-                    清空
-                  </van-button>
-                </div>
-                <div v-if="!recordingAvailable" class="voice-reply-tip">
-                  {{ recordingSupport.message }}
-                </div>
-                <audio
-                  v-if="approvalVoiceAudioUrl"
-                  class="voice-audio-player"
-                  :src="approvalVoiceAudioUrl"
-                  controls
-                  preload="none"
-                ></audio>
-              </div>
-            </template>
-          </van-field>
-          <div class="action-buttons">
-            <van-button type="primary" block @click="handleApprove" :loading="approving">
-              批准
-            </van-button>
-            <van-button type="danger" block plain @click="handleReject" :loading="rejecting">
-              驳回
-            </van-button>
-          </div>
-        </div>
-      </van-cell-group>
+      <!-- 审批人：审批操作 -->
+      <ApprovalActionPanel v-if="canApprove" :application-id="applicationId" @done="fetchAll" />
 
-      <!-- 处理流程 -->
-      <van-cell-group inset class="info-group">
-        <van-cell title="处理流程" />
-        <div class="timeline-section">
-          <div class="timeline-wrapper">
-            <div v-for="(item, index) in timeline" :key="item.id" class="timeline-item">
-              <!-- 操作日志项 -->
-              <template v-if="item.type === 'operation'">
-                <!-- 左侧头像和连线 -->
-                <div class="timeline-left">
-                  <div class="timeline-avatar">
-                    <van-image
-                      v-if="item.data.operatorAvatar"
-                      round
-                      width="40"
-                      height="40"
-                      :src="getAvatarUrl(item.data.operatorAvatar)"
-                      fit="cover"
-                    >
-                      <template #error>
-                        <div class="avatar-fallback">
-                          {{ getAvatarText(item.data.operatorName) }}
-                        </div>
-                      </template>
-                    </van-image>
-                    <div v-else class="avatar-fallback">
-                      {{ getAvatarText(item.data.operatorName) }}
-                    </div>
-                  </div>
-                  <div v-if="index < timeline.length - 1" class="timeline-line"></div>
-                </div>
+      <!-- 处理记录与评论 -->
+      <section class="m-card m-card--pad">
+        <h2 class="m-section-title timeline-title">处理记录</h2>
+        <ApplicationTimeline
+          :logs="operationLogs"
+          :comments="comments"
+          :current-user-id="userStore.userId"
+          @reply="replyTo = $event"
+          @delete="handleDeleteComment"
+        />
+      </section>
 
-                <!-- 右侧内容 -->
-                <div class="timeline-right">
-                  <div class="timeline-content">
-                    <div class="step-header">
-                      <span class="step-title">{{ item.data.operationTypeDesc }}</span>
-                      <span class="step-time">{{ formatDate(item.data.createdAt) }}</span>
-                    </div>
-                    <div class="step-operator">{{ item.data.operatorName }}</div>
-                    <div v-if="item.data.operationDetail" class="step-desc">{{ item.data.operationDetail }}</div>
-
-                    <!-- 印章 - 只在最后一步且状态为已批准或已驳回时显示 -->
-                    <div
-                      v-if="index === timeline.length - 1 && (application?.status === 2 || application?.status === 3)"
-                      class="stamp-wrapper"
-                    >
-                      <div :class="['stamp', application?.status === 2 ? 'stamp-approved' : 'stamp-rejected']">
-                        <div class="stamp-text">{{ application?.status === 2 ? '已批准' : '已驳回' }}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </template>
-
-              <!-- 评论项 -->
-              <template v-else-if="item.type === 'comment'">
-                <!-- 左侧头像和连线 -->
-                <div class="timeline-left">
-                  <div class="timeline-avatar comment-avatar">
-                    <van-image
-                      v-if="item.data.userAvatar"
-                      round
-                      width="40"
-                      height="40"
-                      :src="getAvatarUrl(item.data.userAvatar)"
-                      fit="cover"
-                    >
-                      <template #error>
-                        <div class="avatar-fallback comment-avatar-bg">
-                          {{ getAvatarText(item.data.userName) }}
-                        </div>
-                      </template>
-                    </van-image>
-                    <div v-else class="avatar-fallback comment-avatar-bg">
-                      {{ getAvatarText(item.data.userName) }}
-                    </div>
-                  </div>
-                  <div v-if="index < timeline.length - 1" class="timeline-line"></div>
-                </div>
-
-                <!-- 右侧内容 -->
-                <div class="timeline-right">
-                  <div class="timeline-content comment-content-wrapper">
-                    <div class="comment-header-inline">
-                      <div class="comment-info">
-                        <span class="comment-author">{{ item.data.userName }}</span>
-                        <span class="comment-badge">发表评论</span>
-                      </div>
-                      <div class="comment-actions-inline">
-                        <van-button
-                          size="mini"
-                          type="primary"
-                          plain
-                          icon="chat-o"
-                          @click="handleReply(item.data)"
-                        >
-                          回复
-                        </van-button>
-                        <van-popover
-                          v-if="item.data.userId === userStore.userId"
-                          v-model:show="item.data.showPopover"
-                          :actions="commentActions"
-                          placement="bottom-end"
-                          @select="handleCommentAction($event, item.data)"
-                        >
-                          <template #reference>
-                            <van-icon name="ellipsis" class="comment-more-icon" />
-                          </template>
-                        </van-popover>
-                      </div>
-                    </div>
-                    <div class="comment-time-inline">{{ formatCommentTime(item.data.createdAt) }}</div>
-                    <div class="comment-text">{{ item.data.content }}</div>
-
-                    <!-- 回复列表 -->
-                    <div v-if="item.data.replies && item.data.replies.length > 0" class="replies-inline">
-                      <div v-for="reply in item.data.replies" :key="reply.id" class="reply-item-inline">
-                        <div class="reply-header-inline">
-                          <div class="reply-avatar-small">
-                            <van-image
-                              v-if="reply.userAvatar"
-                              round
-                              width="24"
-                              height="24"
-                              :src="getAvatarUrl(reply.userAvatar)"
-                              fit="cover"
-                            >
-                              <template #error>
-                                <div class="reply-avatar-fallback">{{ getAvatarText(reply.userName) }}</div>
-                              </template>
-                            </van-image>
-                            <div v-else class="reply-avatar-fallback">{{ getAvatarText(reply.userName) }}</div>
-                          </div>
-                          <span class="reply-author">{{ reply.userName }}</span>
-                          <span class="reply-time-inline">{{ formatCommentTime(reply.createdAt) }}</span>
-                          <van-popover
-                            v-if="reply.userId === userStore.userId"
-                            v-model:show="reply.showPopover"
-                            :actions="commentActions"
-                            placement="bottom-end"
-                            @select="handleCommentAction($event, reply)"
-                          >
-                            <template #reference>
-                              <van-icon name="ellipsis" class="reply-more-icon" />
-                            </template>
-                          </van-popover>
-                        </div>
-                        <div class="reply-text-inline">{{ reply.content }}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </template>
-            </div>
-          </div>
-          <van-empty v-if="timeline.length === 0" description="暂无处理记录" />
-        </div>
-      </van-cell-group>
-
-      <!-- 评论输入区 -->
-      <van-cell-group inset class="info-group">
-        <van-cell title="添加评论" />
-        <div class="comment-input-section">
-          <div v-if="replyTo" class="reply-indicator">
-            <van-icon name="arrow-up" />
-            <span>回复 {{ replyTo.userName }}</span>
-            <van-button size="mini" plain @click="cancelReply">取消</van-button>
-          </div>
-          <van-field
-            v-model="newComment"
-            type="textarea"
-            placeholder="请输入评论内容..."
-            rows="3"
-            autosize
-            maxlength="500"
-            show-word-limit
-          >
-            <template #button>
-              <van-button
-                size="small"
-                type="primary"
-                round
-                :loading="submittingComment"
-                :disabled="!newComment.trim()"
-                @click="handleSubmitComment"
-              >
-                发送
-              </van-button>
-            </template>
-          </van-field>
-        </div>
-      </van-cell-group>
-    </template>
+      <CommentComposer
+        :application-id="applicationId"
+        :reply-to="replyTo"
+        @posted="onCommentPosted"
+        @cancel-reply="replyTo = null"
+      />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { showToast, showSuccessToast, showLoadingToast, closeToast, showImagePreview, showConfirmDialog } from 'vant'
+import { showConfirmDialog, showFailToast, showSuccessToast } from 'vant'
 import { useUserStore } from '@/store/modules/user'
-import { applicationAPI, logAPI, attachmentAPI, commentAPI, type Application, type ApplicationComment } from '@/services/api'
 import {
-  startRecording,
-  getRecordingSupportStatus,
-  normalizeAudioBlobToWav,
-  type RecorderHandle,
-} from '@/utils/wavRecorder'
+  applicationAPI,
+  attachmentAPI,
+  commentAPI,
+  logAPI,
+  type Application,
+  type ApplicationComment,
+  type FileUploadResponse,
+  type OperationLogDTO,
+} from '@/services/api'
+import { formatDateTime } from '@/utils/format'
+import { AppType, ApplicationStatus } from '@/utils/status'
+import StatusTag from '@/components/StatusTag.vue'
+import AttachmentList from '@/components/application/AttachmentList.vue'
+import ApplicationTimeline from '@/components/application/ApplicationTimeline.vue'
+import ApprovalActionPanel from '@/components/application/ApprovalActionPanel.vue'
+import CommentComposer from '@/components/application/CommentComposer.vue'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 
-const applicationId = ref<number>(parseInt(route.params.id as string))
+// MobileLayout 以 path 作为 key，换一个 id 会重新挂载本页面，这里读一次即可
+const applicationId = Number(route.params.id)
+
 const application = ref<Application | null>(null)
-const operationLogs = ref<any[]>([])
-const applicationAttachments = ref<any[]>([])
-const approvalAttachments = ref<any[]>([])
-const approvalFileList = ref<any[]>([])
-const approvalDetail = ref('')
 const loading = ref(true)
-const approving = ref(false)
-const rejecting = ref(false)
-const sendingVoiceNotification = ref(false)
+const loadError = ref('')
+const operationLogs = ref<OperationLogDTO[]>([])
+const comments = ref<ApplicationComment[]>([])
+const applicationAttachments = ref<FileUploadResponse[]>([])
+const approvalAttachments = ref<FileUploadResponse[]>([])
 const voiceTranscript = ref('')
-const transcribingVoice = ref(false)
-const approvalVoiceBlob = ref<Blob | null>(null)
-const approvalVoiceAudioUrl = ref('')
-const approvalVoiceFileList = ref<any[]>([])
-const approvalVoiceRecording = ref(false)
-const approvalVoiceProcessing = ref(false)
-const approvalVoiceSeconds = ref(0)
-let approvalVoiceRecorder: RecorderHandle | null = null
-let approvalVoiceTimer: ReturnType<typeof setInterval> | null = null
-
-// 评论相关
-const comments = ref<(ApplicationComment & { showPopover?: boolean })[]>([])
-const newComment = ref('')
+const transcribing = ref(false)
+const sendingVoiceNotification = ref(false)
 const replyTo = ref<ApplicationComment | null>(null)
-const submittingComment = ref(false)
 
-// 合并的时间线（包含操作日志和评论）
-interface TimelineItem {
-  id: string | number
-  type: 'operation' | 'comment'
-  time: string
-  data: any
-}
+const isImage = (type?: string) => !!type && type.startsWith('image/')
+const isAudio = (type?: string) => !!type && type.startsWith('audio/')
+const isFile = (type?: string) => !isImage(type) && !isAudio(type)
 
-const timeline = computed<TimelineItem[]>(() => {
-  const items: TimelineItem[] = []
+const applicationAudio = computed(() => applicationAttachments.value.filter(a => isAudio(a.fileType)))
+const applicationImages = computed(() => applicationAttachments.value.filter(a => isImage(a.fileType)))
+const applicationFiles = computed(() => applicationAttachments.value.filter(a => isFile(a.fileType)))
+const approvalAudio = computed(() => approvalAttachments.value.filter(a => isAudio(a.fileType)))
+const approvalImages = computed(() => approvalAttachments.value.filter(a => isImage(a.fileType)))
+const approvalFiles = computed(() => approvalAttachments.value.filter(a => isFile(a.fileType)))
 
-  // 添加操作日志
-  operationLogs.value.forEach(log => {
-    items.push({
-      id: `log-${log.id}`,
-      type: 'operation',
-      time: log.createdAt,
-      data: log
-    })
-  })
-
-  // 添加顶级评论（不包括回复）
-  comments.value
-    .filter(comment => !comment.parentId)
-    .forEach(comment => {
-      items.push({
-        id: `comment-${comment.id}`,
-        type: 'comment',
-        time: comment.createdAt,
-        data: comment
-      })
-    })
-
-  // 按时间排序
-  return items.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
-})
-
-const commentActions = [
-  { text: '删除', value: 'delete' }
-]
-
-// 判断是否是图片
-const formatDuration = (sec: number): string => {
-  const m = Math.floor(sec / 60).toString().padStart(2, '0')
-  const s = (sec % 60).toString().padStart(2, '0')
-  return `${m}:${s}`
-}
-
-const recordingSupport = computed(() => getRecordingSupportStatus())
-const recordingAvailable = computed(() => recordingSupport.value.supported)
-
-const isImage = (fileType?: string): boolean => {
-  return !!fileType && fileType.startsWith('image/')
-}
-
-const isAudio = (fileType?: string): boolean => {
-  return !!fileType && fileType.startsWith('audio/')
-}
-
-// 分离图片和文件
-const applicationAudioAttachments = computed(() =>
-  applicationAttachments.value.filter(a => isAudio(a.fileType))
-)
-const applicationImages = computed(() =>
-  applicationAttachments.value.filter(a => isImage(a.fileType))
-)
-const applicationFiles = computed(() =>
-  applicationAttachments.value.filter(a => !isImage(a.fileType) && !isAudio(a.fileType))
-)
-const approvalAudioAttachments = computed(() =>
-  approvalAttachments.value.filter(a => isAudio(a.fileType))
-)
-const approvalImages = computed(() =>
-  approvalAttachments.value.filter(a => isImage(a.fileType))
-)
-const approvalFiles = computed(() =>
-  approvalAttachments.value.filter(a => !isImage(a.fileType) && !isAudio(a.fileType))
+const isVoiceApplication = computed(() =>
+  application.value?.appType === AppType.VOICE || applicationAudio.value.length > 0 || !!voiceTranscript.value
 )
 
-const hasVoiceSection = computed(() => {
-  return applicationAudioAttachments.value.length > 0 || application.value?.appType === 2 || !!voiceTranscript.value
-})
+const isPending = computed(() => application.value?.status === ApplicationStatus.PENDING)
+const canApprove = computed(() => isPending.value && application.value?.approverId === userStore.userId)
+const canSendVoiceNotification = computed(() => isPending.value && application.value?.applicantId === userStore.userId)
 
-const canApprove = computed(() => {
-  return application.value?.approverId === userStore.userId && application.value?.status === 1
-})
-
-const canSendVoiceNotification = computed(() => {
-  // 只有待审批状态的申请，且当前用户是申请人，才能发送语音通知
-  return application.value?.applicantId === userStore.userId && application.value?.status === 1
-})
-
-onMounted(async () => {
-  await fetchAll()
-})
-
-onUnmounted(() => {
-  clearApprovalVoiceTimer()
-  if (approvalVoiceRecorder) {
-    approvalVoiceRecorder.cancel()
-    approvalVoiceRecorder = null
+function goBack(): void {
+  if (window.history.state?.back) {
+    router.back()
+  } else {
+    router.replace('/mobile/applications')
   }
-  clearApprovalVoiceReply()
-})
+}
 
-const fetchAll = async (): Promise<void> => {
-  loading.value = true
-  try {
-    await Promise.all([
-      fetchApplicationDetail(),
-      fetchTimeline(),
-      fetchAttachments(),
-      fetchComments()
-    ])
-  } finally {
+async function fetchAll(): Promise<void> {
+  if (!Number.isFinite(applicationId)) {
     loading.value = false
-  }
-}
-
-const fetchApplicationDetail = async (): Promise<void> => {
-  try {
-    const response = await applicationAPI.getApplicationDetail(applicationId.value)
-    application.value = response
-    voiceTranscript.value = response.voiceTranscript || ''
-  } catch (error: any) {
-    showToast(error.message || '获取申请详情失败')
-  }
-}
-
-const fetchTimeline = async (): Promise<void> => {
-  try {
-    const response = await logAPI.getApplicationTimeline(applicationId.value)
-    operationLogs.value = response || []
-  } catch (error: any) {
-    console.error('获取操作日志失败', error)
-  }
-}
-
-const fetchAttachments = async (): Promise<void> => {
-  try {
-    const [appAtts, approvalAtts] = await Promise.all([
-      attachmentAPI.getApplicationAttachments(applicationId.value),
-      attachmentAPI.getApprovalAttachments(applicationId.value)
-    ])
-    applicationAttachments.value = appAtts || []
-    approvalAttachments.value = approvalAtts || []
-  } catch (error: any) {
-    console.error('获取附件失败', error)
-  }
-}
-
-// 预览图片
-const previewImages = (images: any[], startIndex: number): void => {
-  showImagePreview({
-    images: images.map(img => img.fileUrl),
-    startPosition: startIndex
-  })
-}
-
-// 文件超限
-const onOversize = (): void => {
-  showToast('文件大小不能超过10MB')
-}
-
-// 上传审批附件
-const isLocalAudioFile = (file: File): boolean => {
-  return file.type.startsWith('audio/') || /\.(wav|mp3|m4a|aac|mp4|webm|ogg)$/i.test(file.name)
-}
-
-const clearApprovalVoiceTimer = (): void => {
-  if (approvalVoiceTimer) {
-    clearInterval(approvalVoiceTimer)
-    approvalVoiceTimer = null
-  }
-}
-
-const clearApprovalVoiceReply = (clearUpload = true): void => {
-  if (approvalVoiceAudioUrl.value) {
-    URL.revokeObjectURL(approvalVoiceAudioUrl.value)
-  }
-  approvalVoiceAudioUrl.value = ''
-  approvalVoiceBlob.value = null
-  if (clearUpload) {
-    approvalVoiceFileList.value = []
-  }
-}
-
-const setApprovalVoiceReply = (audioBlob: Blob, clearUpload = true): void => {
-  clearApprovalVoiceReply(clearUpload)
-  approvalVoiceBlob.value = audioBlob
-  approvalVoiceAudioUrl.value = URL.createObjectURL(audioBlob)
-}
-
-const stopApprovalVoiceRecording = async (): Promise<void> => {
-  if (!approvalVoiceRecorder || !approvalVoiceRecording.value) return
-  clearApprovalVoiceTimer()
-  approvalVoiceRecording.value = false
-  approvalVoiceProcessing.value = true
-  try {
-    const audioBlob = await approvalVoiceRecorder.stop()
-    approvalVoiceRecorder = null
-    if (!audioBlob || audioBlob.size <= 44) {
-      showToast('录音时间太短，请重新录制')
-      return
-    }
-    setApprovalVoiceReply(audioBlob)
-    showSuccessToast('语音回复就绪')
-  } catch (error: any) {
-    approvalVoiceRecorder = null
-    showToast(error.message || 'Voice recording failed')
-  } finally {
-    approvalVoiceProcessing.value = false
-  }
-}
-
-const startApprovalVoiceRecording = async (): Promise<void> => {
-  if (!getRecordingSupportStatus().supported) {
-    showToast(getRecordingSupportStatus().message)
-    return
-  }
-  approvalVoiceSeconds.value = 0
-  approvalVoiceProcessing.value = false
-  try {
-    approvalVoiceRecorder = await startRecording()
-    approvalVoiceRecording.value = true
-    approvalVoiceTimer = setInterval(() => {
-      approvalVoiceSeconds.value++
-      if (approvalVoiceSeconds.value >= 60) {
-        void stopApprovalVoiceRecording()
-      }
-    }, 1000)
-  } catch (error: any) {
-    approvalVoiceRecording.value = false
-    showToast(error.message || 'Unable to start recording')
-  }
-}
-
-const toggleApprovalVoiceRecording = async (): Promise<void> => {
-  if (approvalVoiceRecording.value) {
-    await stopApprovalVoiceRecording()
-    return
-  }
-  await startApprovalVoiceRecording()
-}
-
-const handleApprovalVoiceFileRead = async (fileItem: any): Promise<void> => {
-  const item = Array.isArray(fileItem) ? fileItem[0] : fileItem
-  const file = item?.file as File | undefined
-  if (!file) return
-  if (!isLocalAudioFile(file)) {
-    approvalVoiceFileList.value = []
-    showToast('请选择音频文件')
+    loadError.value = '申请编号不正确'
     return
   }
 
-  approvalVoiceProcessing.value = true
-  item.status = '上传中'
-  item.message = '处理中'
+  loading.value = !application.value
+  loadError.value = ''
   try {
-    const wavBlob = await normalizeAudioBlobToWav(file)
-    setApprovalVoiceReply(wavBlob, false)
-    item.status = '完成'
-    item.message = '就绪'
-    showSuccessToast('语音回复就绪')
+    const detail = await applicationAPI.getApplicationDetail(applicationId)
+    application.value = detail
+    voiceTranscript.value = detail.voiceTranscript || ''
   } catch (error: any) {
-    item.status = '失败'
-    item.message = '失败'
-    showToast(error.message || 'Audio processing failed')
-  } finally {
-    approvalVoiceProcessing.value = false
-  }
-}
-
-const uploadApprovalFiles = async (): Promise<void> => {
-  for (const fileItem of approvalFileList.value) {
-    if (fileItem.file) {
-      try {
-        await attachmentAPI.uploadApprovalAttachment(applicationId.value, fileItem.file)
-      } catch (error) {
-        console.error('上传附件失败:', error)
-      }
-    }
-  }
-}
-
-const handleApprove = async (): Promise<void> => {
-  approving.value = true
-  showLoadingToast({ message: '处理中...', forbidClick: true })
-  try {
-    if (approvalFileList.value.length > 0) {
-      await uploadApprovalFiles()
-    }
-    await applicationAPI.approveApplication(
-      applicationId.value,
-      { approvalDetail: approvalDetail.value },
-      approvalVoiceBlob.value || undefined
-    )
-    closeToast()
-    showSuccessToast('审批通过')
-    approvalFileList.value = []
-    clearApprovalVoiceReply()
-    approvalDetail.value = ''
-    await fetchAll()
-  } catch (error: any) {
-    closeToast()
-    showToast(error.message || '审批失败')
-  } finally {
-    approving.value = false
-  }
-}
-
-const handleReject = async (): Promise<void> => {
-  rejecting.value = true
-  showLoadingToast({ message: '处理中...', forbidClick: true })
-  try {
-    if (approvalFileList.value.length > 0) {
-      await uploadApprovalFiles()
-    }
-    await applicationAPI.rejectApplication(
-      applicationId.value,
-      { approvalDetail: approvalDetail.value },
-      approvalVoiceBlob.value || undefined
-    )
-    closeToast()
-    showSuccessToast('已驳回')
-    approvalFileList.value = []
-    clearApprovalVoiceReply()
-    approvalDetail.value = ''
-    await fetchAll()
-  } catch (error: any) {
-    closeToast()
-    showToast(error.message || '驳回失败')
-  } finally {
-    rejecting.value = false
-  }
-}
-
-// 发送语音通知
-const handleSendVoiceNotification = async (): Promise<void> => {
-  // 检查语音通知权限
-  if (!userStore.voiceNotificationEnabled) {
-    showConfirmDialog({
-      title: '语音通知权限未开通',
-      message: '您尚未开通语音通知权限，该功能需要管理员为您开启。请联系管理员开通权限后使用。',
-      confirmButtonText: '知道了',
-      showCancelButton: false
-    })
+    loadError.value = error.message || '加载失败'
+    loading.value = false
     return
   }
 
+  // 详情能打开时，其余几块各自失败只影响各自区域
+  const [logs, commentList, appAtts, approvalAtts] = await Promise.allSettled([
+    logAPI.getApplicationTimeline(applicationId),
+    commentAPI.getApplicationComments(applicationId),
+    attachmentAPI.getApplicationAttachments(applicationId),
+    attachmentAPI.getApprovalAttachments(applicationId),
+  ])
+  if (logs.status === 'fulfilled') operationLogs.value = logs.value || []
+  if (commentList.status === 'fulfilled') comments.value = commentList.value || []
+  if (appAtts.status === 'fulfilled') applicationAttachments.value = appAtts.value || []
+  if (approvalAtts.status === 'fulfilled') approvalAttachments.value = approvalAtts.value || []
+  loading.value = false
+}
+
+async function refreshComments(): Promise<void> {
+  try {
+    comments.value = await commentAPI.getApplicationComments(applicationId) || []
+  } catch (error: any) {
+    showFailToast(error.message || '评论加载失败')
+  }
+}
+
+function onCommentPosted(): void {
+  replyTo.value = null
+  refreshComments()
+}
+
+async function handleDeleteComment(comment: ApplicationComment): Promise<void> {
+  try {
+    await showConfirmDialog({ title: '删除评论', message: '确定删除这条评论吗？' })
+  } catch {
+    return
+  }
+  try {
+    await commentAPI.deleteComment(comment.id)
+    showSuccessToast('已删除')
+    refreshComments()
+  } catch (error: any) {
+    showFailToast(error.message || '删除失败')
+  }
+}
+
+async function handleSendVoiceNotification(): Promise<void> {
   sendingVoiceNotification.value = true
-  showLoadingToast({ message: '发送中...', forbidClick: true })
   try {
-    await applicationAPI.sendVoiceNotification(applicationId.value)
-    closeToast()
-    showSuccessToast('语音通知已发送')
+    await applicationAPI.sendVoiceNotification(applicationId)
+    showSuccessToast('已拨打提醒电话')
   } catch (error: any) {
-    closeToast()
-    showToast(error.message || '发送失败')
+    showFailToast(error.message || '发送失败')
   } finally {
     sendingVoiceNotification.value = false
   }
 }
 
-const handleTranscribeVoice = async (): Promise<void> => {
-  transcribingVoice.value = true
-  showLoadingToast({ message: '转写中...', forbidClick: true })
+async function handleTranscribe(): Promise<void> {
+  transcribing.value = true
   try {
-    const transcript = await applicationAPI.transcribeVoiceApplication(applicationId.value, 'zh')
-    voiceTranscript.value = transcript || ''
-    if (application.value) {
-      application.value.voiceTranscript = voiceTranscript.value
-    }
-    closeToast()
-    showSuccessToast('转写完成')
+    voiceTranscript.value = (await applicationAPI.transcribeVoiceApplication(applicationId, 'zh')) || ''
   } catch (error: any) {
-    closeToast()
-    showToast(error.message || '转写失败')
+    showFailToast(error.message || '转写失败')
   } finally {
-    transcribingVoice.value = false
+    transcribing.value = false
   }
 }
 
-const getStatusType = (status?: number): any => {
-  const types: Record<number, string> = {
-    1: 'warning',
-    2: 'success',
-    3: 'danger',
-    4: 'default'
-  }
-  return status ? types[status] : 'default'
-}
-
-const getStatusText = (status?: number): string => {
-  const texts: Record<number, string> = {
-    1: '待审批',
-    2: '已通过',
-    3: '已驳回',
-    4: '草稿'
-  }
-  return status ? texts[status] : '未知'
-}
-
-const formatDate = (date?: string): string => {
-  if (!date) return ''
-  const d = new Date(date)
-  return d.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
-
-// 获取头像URL
-const getAvatarUrl = (avatar: string): string => {
-  if (!avatar) return ''
-  if (avatar.startsWith('/')) {
-    return `http://localhost:8080${avatar}`
-  }
-  return avatar
-}
-
-// 获取头像文字
-const getAvatarText = (name: string): string => {
-  if (!name) return 'U'
-  return name.charAt(0).toUpperCase()
-}
-
-// 获取评论列表
-const fetchComments = async (): Promise<void> => {
-  try {
-    const response = await commentAPI.getApplicationComments(applicationId.value)
-    comments.value = response.map(comment => ({ ...comment, showPopover: false }))
-  } catch (error: any) {
-    console.error('获取评论失败', error)
-  }
-}
-
-// 发送评论
-const handleSubmitComment = async (): Promise<void> => {
-  if (!newComment.value.trim()) {
-    showToast('请输入评论内容')
-    return
-  }
-
-  submittingComment.value = true
-  try {
-    await commentAPI.createComment({
-      applicationId: applicationId.value,
-      content: newComment.value.trim(),
-      parentId: replyTo.value?.id
-    })
-
-    showSuccessToast('评论成功')
-    newComment.value = ''
-    replyTo.value = null
-    await fetchComments()
-  } catch (error: any) {
-    showToast(error.message || '评论失败')
-  } finally {
-    submittingComment.value = false
-  }
-}
-
-// 回复评论
-const handleReply = (comment: ApplicationComment): void => {
-  replyTo.value = comment
-  newComment.value = ''
-}
-
-// 取消回复
-const cancelReply = (): void => {
-  replyTo.value = null
-  newComment.value = ''
-}
-
-// 评论操作
-const handleCommentAction = async (action: any, comment: ApplicationComment & { showPopover?: boolean }): Promise<void> => {
-  comment.showPopover = false
-
-  if (action.value === 'delete') {
-    try {
-      await showConfirmDialog({
-        title: '确认删除',
-        message: '确定要删除这条评论吗？'
-      })
-
-      await commentAPI.deleteComment(comment.id)
-      showSuccessToast('删除成功')
-      await fetchComments()
-    } catch (error: any) {
-      if (error !== 'cancel') {
-        showToast(error.message || '删除失败')
-      }
-    }
-  }
-}
-
-// 格式化评论时间
-const formatCommentTime = (date: string): string => {
-  if (!date) return ''
-  const d = new Date(date)
-  const now = new Date()
-  const diff = now.getTime() - d.getTime()
-  const minutes = Math.floor(diff / (1000 * 60))
-  const hours = Math.floor(diff / (1000 * 60 * 60))
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-
-  if (minutes < 1) return '刚刚'
-  if (minutes < 60) return `${minutes}分钟前`
-  if (hours < 24) return `${hours}小时前`
-  if (days < 7) return `${days}天前`
-  return d.toLocaleDateString('zh-CN')
-}
-
+onMounted(fetchAll)
 </script>
 
 <style scoped>
-.application-detail-page {
-  min-height: 100vh;
-  background: #f5f6f7;
-  padding-bottom: 20px;
+.detail-page {
+  min-height: 100%;
+  background: var(--bg);
 }
 
-:deep(.van-nav-bar) {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+.page-state {
+  padding-top: 80px;
+  text-align: center;
 }
 
-:deep(.van-nav-bar__title) {
-  color: white;
+.m-page > * + * {
+  margin-top: 10px;
 }
 
-:deep(.van-nav-bar__arrow) {
-  color: white;
-}
-
-.loading-state {
-  padding: 60px 0;
-}
-
-.status-card {
-  margin: 12px;
-  padding: 16px;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-}
-
-.status-header {
+.summary-head {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
+  gap: 12px;
 }
 
-.status-header .title {
-  font-size: 18px;
+.summary-title {
+  color: var(--ink);
+  font-size: 19px;
   font-weight: 600;
-  color: #333;
-  flex: 1;
-  margin-right: 12px;
+  line-height: 1.4;
 }
 
-.status-time {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  color: #999;
+.summary-head :deep(.status-tag) {
+  margin-top: 3px;
 }
 
-.info-group {
-  margin: 12px;
+.summary-meta {
+  margin-top: 6px;
 }
 
-.attachment-section {
-  padding: 12px 16px;
+.reject-note {
+  margin-top: 12px;
 }
 
-.image-preview {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
+.fields {
+  margin: 0;
 }
 
-.image-preview :deep(.van-image) {
-  border-radius: 8px;
-  overflow: hidden;
+.field {
+  margin-top: 14px;
 }
 
-.file-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: #f5f5f5;
-  border-radius: 6px;
-  margin-bottom: 8px;
+.field dt {
+  color: var(--ink-3);
+  font-size: 12px;
 }
 
-.file-item a {
-  color: #667eea;
-  text-decoration: none;
-  font-size: 14px;
+.field dd {
+  margin: 2px 0 0;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
-.file-item :deep(.van-icon) {
-  color: #999;
-  font-size: 18px;
+.audio-row {
+  margin-top: 10px;
 }
 
-.voice-application-section {
-  padding: 12px 16px;
-}
-
-.voice-audio-item {
-  padding: 12px;
-  background: #f7f8fa;
-  border-radius: 8px;
-  margin-bottom: 10px;
-}
-
-.voice-audio-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-  color: #323233;
-  font-size: 14px;
-}
-
-.voice-audio-title :deep(.van-icon) {
-  color: #667eea;
-  font-size: 18px;
-}
-
-.voice-audio-player {
+.audio-row audio {
   display: block;
   width: 100%;
-}
-
-.voice-transcript-box {
-  padding: 12px;
-  background: #f7f8fa;
-  border-radius: 8px;
-  margin-bottom: 10px;
-}
-
-.voice-transcript-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 6px;
-  color: #969799;
-  font-size: 12px;
-}
-
-.voice-transcript-text {
-  color: #323233;
-  font-size: 14px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-}
-
-.voice-transcribe-button {
-  margin-top: 4px;
-}
-
-.approval-form {
-  padding: 12px 16px;
-}
-
-.approval-voice-reply {
-  width: 100%;
-}
-
-.approval-voice-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.voice-reply-tip {
-  color: #969799;
-  font-size: 12px;
-  line-height: 1.4;
-  margin-bottom: 8px;
-}
-
-.voice-notification-section {
-  padding: 12px 16px;
-}
-
-.voice-notification-section .van-button {
-  background: linear-gradient(135deg, #ff9a3e 0%, #ff7a18 100%);
-  border: none;
-}
-
-.action-buttons {
-  display: flex;
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.action-buttons .van-button {
-  flex: 1;
-}
-
-.timeline-section {
-  padding: 12px 16px;
-}
-
-.timeline-wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.timeline-item {
-  display: flex;
-  gap: 16px;
-  min-height: 80px;
-  position: relative;
-}
-
-.timeline-left {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  position: relative;
-}
-
-.timeline-avatar {
-  width: 40px;
   height: 40px;
-  flex-shrink: 0;
-  position: relative;
-  z-index: 2;
 }
 
-.avatar-fallback {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  font-weight: 600;
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
-}
-
-.timeline-avatar :deep(.van-image) {
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
-}
-
-.timeline-line {
-  flex: 1;
-  width: 2px;
-  background: linear-gradient(180deg, #667eea 0%, #e0e0e0 100%);
+.muted {
   margin-top: 4px;
-  min-height: 40px;
-}
-
-.timeline-right {
-  flex: 1;
-  padding-bottom: 20px;
-}
-
-.timeline-content {
-  background: #f8f9fa;
-  border-radius: 12px;
-  padding: 12px 16px;
-  position: relative;
-  border-left: 3px solid #667eea;
-}
-
-.timeline-content::before {
-  content: '';
-  position: absolute;
-  left: -11px;
-  top: 16px;
-  width: 0;
-  height: 0;
-  border-top: 6px solid transparent;
-  border-bottom: 6px solid transparent;
-  border-right: 8px solid #667eea;
-}
-
-.step-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 6px;
-}
-
-.step-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: #333;
-}
-
-.step-time {
-  font-size: 11px;
-  color: #999;
-}
-
-.step-operator {
+  color: var(--ink-3);
   font-size: 13px;
-  color: #667eea;
-  font-weight: 500;
-  margin-bottom: 6px;
 }
 
-.step-desc {
-  font-size: 13px;
-  color: #666;
-  line-height: 1.5;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #e8e8e8;
-}
-
-/* 印章样式 */
-.stamp-wrapper {
-  position: absolute;
-  right: 16px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.stamp {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  border: 3px solid;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  animation: stampAppear 0.5s ease-out;
-  transform: rotate(-15deg);
-  opacity: 0.9;
-}
-
-@keyframes stampAppear {
-  0% {
-    transform: scale(0) rotate(-15deg);
-    opacity: 0;
-  }
-  50% {
-    transform: scale(1.1) rotate(-15deg);
-  }
-  100% {
-    transform: scale(1) rotate(-15deg);
-    opacity: 0.9;
-  }
-}
-
-.stamp-approved {
-  border-color: #00b42a;
-  background: radial-gradient(circle, rgba(0, 180, 42, 0.1) 0%, rgba(0, 180, 42, 0.05) 100%);
-}
-
-.stamp-rejected {
-  border-color: #f53f3f;
-  background: radial-gradient(circle, rgba(245, 63, 63, 0.1) 0%, rgba(245, 63, 63, 0.05) 100%);
-}
-
-.stamp-text {
-  font-size: 20px;
-  font-weight: 900;
-  letter-spacing: 2px;
-  writing-mode: horizontal-tb;
-}
-
-.stamp-approved .stamp-text {
-  color: #00b42a;
-  text-shadow: 1px 1px 2px rgba(0, 180, 42, 0.3);
-}
-
-.stamp-rejected .stamp-text {
-  color: #f53f3f;
-  text-shadow: 1px 1px 2px rgba(245, 63, 63, 0.3);
-}
-
-.stamp::before {
-  content: '';
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  border: 2px solid;
-  border-color: inherit;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  opacity: 0.5;
-}
-
-.stamp::after {
-  content: '';
-  position: absolute;
-  width: 90%;
-  height: 90%;
-  border-radius: 50%;
-  border: 1px solid;
-  border-color: inherit;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  opacity: 0.3;
-}
-
-/* 评论时间线样式 */
-.comment-avatar-bg {
-  background: linear-gradient(135deg, #f5a623 0%, #f76b1c 100%) !important;
-}
-
-.comment-content-wrapper {
-  background: linear-gradient(135deg, #fff5e6 0%, #fffaf0 100%);
-  border: 1px solid #ffe7ba;
-  border-radius: 12px;
-  padding: 12px;
-}
-
-.comment-header-inline {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 8px;
-}
-
-.comment-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-}
-
-.comment-author {
-  font-size: 14px;
-  font-weight: 600;
-  color: #333;
-}
-
-.comment-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  background: linear-gradient(135deg, #f5a623 0%, #f76b1c 100%);
-  color: white;
-  font-size: 11px;
-  border-radius: 10px;
-  font-weight: 500;
-}
-
-.comment-actions-inline {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.comment-more-icon {
-  color: #999;
-  font-size: 18px;
-  cursor: pointer;
-  padding: 4px;
-}
-
-.comment-time-inline {
-  font-size: 12px;
-  color: #999;
-  margin-bottom: 8px;
-}
-
-.comment-text {
-  font-size: 14px;
-  color: #333;
-  line-height: 1.6;
-  word-wrap: break-word;
-  margin-bottom: 8px;
-}
-
-/* 回复列表内联样式 */
-.replies-inline {
+.transcript {
   margin-top: 12px;
-  padding: 8px;
-  background: rgba(255, 255, 255, 0.6);
-  border-radius: 8px;
-  border: 1px solid #f0e6d2;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
 }
 
-.reply-item-inline {
-  padding: 8px;
-  margin-bottom: 8px;
-  background: white;
-  border-radius: 6px;
-  border: 1px solid #ffeaa7;
-}
-
-.reply-item-inline:last-child {
-  margin-bottom: 0;
-}
-
-.reply-header-inline {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
-}
-
-.reply-avatar-small {
-  flex-shrink: 0;
-}
-
-.reply-avatar-fallback {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #f5a623 0%, #f76b1c 100%);
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.transcript-label {
+  color: var(--ink-3);
   font-size: 12px;
-  font-weight: 600;
 }
 
-.reply-author {
-  font-size: 13px;
-  font-weight: 600;
-  color: #333;
+.transcript p {
+  margin-top: 2px;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.6;
 }
 
-.reply-time-inline {
-  font-size: 11px;
-  color: #999;
-  margin-left: auto;
+.transcribe-btn {
+  margin-top: 12px;
 }
 
-.reply-more-icon {
-  color: #999;
-  font-size: 16px;
-  cursor: pointer;
-  padding: 2px;
-}
-
-.reply-text-inline {
-  font-size: 13px;
-  color: #555;
-  line-height: 1.5;
-  word-wrap: break-word;
-  padding-left: 30px;
-}
-
-/* 评论输入区样式 */
-.comment-input-section {
-  padding: 12px 16px;
-}
-
-.reply-indicator {
+.remind {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: linear-gradient(135deg, #e8f5ff 0%, #f0f9ff 100%);
-  border: 1px solid #b3d9ff;
-  border-radius: 8px;
-  margin-bottom: 12px;
-  font-size: 13px;
-  color: #1989fa;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.reply-indicator span {
-  flex: 1;
-}
-
-.comment-input-section :deep(.van-field) {
-  background: #f8f9fa;
-  border-radius: 12px;
-  border: 1px solid #e5e7eb;
-  padding: 12px;
-  transition: all 0.3s;
-}
-
-.comment-input-section :deep(.van-field:focus-within) {
-  background: white;
-  border-color: #1989fa;
-  box-shadow: 0 0 0 3px rgba(25, 137, 250, 0.1);
-}
-
-.comment-input-section :deep(.van-field__control) {
-  font-size: 14px;
-}
-
-.comment-input-section :deep(.van-button--primary) {
-  background: linear-gradient(135deg, #1989fa 0%, #1c7ed6 100%);
-  border: none;
+.timeline-title {
+  margin-bottom: 14px;
 }
 </style>

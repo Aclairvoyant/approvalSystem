@@ -1,51 +1,59 @@
 <template>
   <div class="templates-page">
-    <van-nav-bar title="申请模板" fixed placeholder>
+    <van-nav-bar title="申请模板" left-arrow fixed placeholder @click-left="$router.back()">
       <template #right>
-        <van-icon name="plus" size="20" @click="openCreate" />
+        <van-icon name="plus" size="20" aria-label="添加模板" @click="openCreate" />
       </template>
     </van-nav-bar>
 
-    <van-pull-refresh v-model="refreshing" @refresh="loadTemplates">
-      <van-empty v-if="!loading && templates.length === 0" description="把常用申请保存成模板">
-        <van-button type="primary" size="small" round @click="openCreate">添加模板</van-button>
+    <van-pull-refresh v-model="refreshing" class="m-page" @refresh="loadTemplates">
+      <van-empty v-if="!loading && templates.length === 0" class="m-empty" description="把常用的申请存成模板，下次一键带入">
+        <van-button type="primary" size="small" @click="openCreate">添加模板</van-button>
       </van-empty>
 
       <div v-else class="template-list">
-        <van-swipe-cell v-for="template in templates" :key="template.id">
-          <div class="template-card">
+        <!-- 只有创建者能编辑和删除，对象共享过来的模板只能套用 -->
+        <van-swipe-cell
+          v-for="template in templates"
+          :key="template.id"
+          class="m-card"
+          :disabled="!isMine(template)"
+        >
+          <div class="template-row">
             <div class="template-main">
-              <div class="template-title">{{ template.title }}</div>
-              <div class="template-desc">{{ template.description }}</div>
-              <div class="template-meta">
-                <span>{{ template.shared ? '双方共享' : '仅自己' }}</span>
-                <span>使用 {{ template.usageCount || 0 }} 次</span>
+              <div class="m-title">{{ template.title }}</div>
+              <p class="template-desc">{{ template.description }}</p>
+              <div class="m-meta">
+                <span>{{ isMine(template) ? (template.shared ? '我创建 · 双方共享' : '我创建 · 仅自己') : '对象共享' }}</span>
+                <span class="tabular">用过 {{ template.usageCount || 0 }} 次</span>
               </div>
             </div>
-            <van-button size="small" type="primary" plain @click="useTemplate(template)">套用</van-button>
+            <van-button size="small" plain type="primary" :loading="usingId === template.id" @click="useTemplate(template)">
+              套用
+            </van-button>
           </div>
           <template #right>
-            <van-button square type="primary" text="编辑" class="swipe-btn" @click="openEdit(template)" />
-            <van-button square type="danger" text="删除" class="swipe-btn" @click="deleteTemplate(template)" />
+            <van-button square type="primary" text="编辑" class="m-swipe-btn" @click="openEdit(template)" />
+            <van-button square type="danger" text="删除" class="m-swipe-btn" @click="deleteTemplate(template)" />
           </template>
         </van-swipe-cell>
       </div>
     </van-pull-refresh>
 
     <van-action-sheet v-model:show="showEditor" :title="editingId ? '编辑模板' : '添加模板'">
-      <van-form class="editor" @submit="saveTemplate">
+      <van-form class="m-sheet" @submit="saveTemplate">
         <van-cell-group inset>
-          <van-field v-model="form.title" label="标题" required />
-          <van-field v-model="form.description" label="说明" type="textarea" rows="3" required />
-          <van-field v-model="form.remark" label="备注" />
+          <van-field v-model="form.title" label="标题" maxlength="100" placeholder="例如：周末加班" required />
+          <van-field v-model="form.description" label="说明" type="textarea" rows="3" maxlength="500" required />
+          <van-field v-model="form.remark" label="备注" maxlength="200" />
           <van-field label="共享给对象">
             <template #input>
               <van-switch v-model="form.shared" size="20" />
             </template>
           </van-field>
         </van-cell-group>
-        <div class="form-actions">
-          <van-button round block type="primary" native-type="submit" :loading="saving">保存</van-button>
+        <div class="m-sheet-footer">
+          <van-button block type="primary" native-type="submit" :loading="saving">保存</van-button>
         </div>
       </van-form>
     </van-action-sheet>
@@ -55,16 +63,19 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { showFailToast, showSuccessToast } from 'vant'
+import { showConfirmDialog, showFailToast, showSuccessToast } from 'vant'
 import { applicationTemplateAPI, type ApplicationTemplate } from '@/services/api'
+import { useUserStore } from '@/store/modules/user'
 
 const router = useRouter()
+const userStore = useUserStore()
 const templates = ref<ApplicationTemplate[]>([])
 const loading = ref(false)
 const refreshing = ref(false)
 const saving = ref(false)
 const showEditor = ref(false)
 const editingId = ref<number | null>(null)
+const usingId = ref<number | null>(null)
 
 const form = reactive({
   title: '',
@@ -76,6 +87,10 @@ const form = reactive({
 onMounted(() => {
   loadTemplates()
 })
+
+function isMine(template: ApplicationTemplate) {
+  return template.creatorId === userStore.userId
+}
 
 async function loadTemplates() {
   loading.value = true
@@ -116,7 +131,7 @@ async function saveTemplate() {
     const payload = {
       title: form.title.trim(),
       description: form.description.trim(),
-      remark: form.remark,
+      remark: form.remark.trim(),
       shared: form.shared,
     }
     if (editingId.value) {
@@ -135,43 +150,59 @@ async function saveTemplate() {
 }
 
 async function useTemplate(template: ApplicationTemplate) {
-  const used = await applicationTemplateAPI.use(template.id)
-  router.push({
-    path: '/mobile/applications',
-    query: {
-      title: used.title,
-      description: used.description,
-      remark: used.remark || '',
-    },
-  })
+  usingId.value = template.id
+  try {
+    const used = await applicationTemplateAPI.use(template.id)
+    await router.push({
+      path: '/mobile/applications',
+      query: {
+        title: used.title,
+        description: used.description,
+        remark: used.remark || '',
+      },
+    })
+  } catch (error: any) {
+    showFailToast(error.message || '套用失败')
+  } finally {
+    usingId.value = null
+  }
 }
 
 async function deleteTemplate(template: ApplicationTemplate) {
-  await applicationTemplateAPI.delete(template.id)
-  showSuccessToast('已删除')
-  loadTemplates()
+  try {
+    await showConfirmDialog({ title: '删除模板', message: `确定删除"${template.title}"吗？` })
+  } catch {
+    return
+  }
+  try {
+    await applicationTemplateAPI.delete(template.id)
+    showSuccessToast('已删除')
+    loadTemplates()
+  } catch (error: any) {
+    showFailToast(error.message || '删除失败')
+  }
 }
 </script>
 
 <style scoped>
 .templates-page {
-  min-height: 100vh;
-  background: #f6f7f9;
-  padding-bottom: 72px;
+  min-height: 100%;
+  background: var(--bg);
 }
 
-.template-list {
-  padding: 12px;
+.template-list .m-card + .m-card {
+  margin-top: 8px;
 }
 
-.template-card {
+.template-list :deep(.van-swipe-cell) {
+  overflow: hidden;
+}
+
+.template-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px;
-  margin-bottom: 10px;
-  background: #fff;
-  border-radius: 8px;
+  padding: 14px 16px;
 }
 
 .template-main {
@@ -179,35 +210,18 @@ async function deleteTemplate(template: ApplicationTemplate) {
   min-width: 0;
 }
 
-.template-title {
-  font-weight: 600;
-  color: #202124;
-}
-
 .template-desc {
-  margin-top: 6px;
-  color: #666;
+  display: -webkit-box;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--ink-2);
   font-size: 13px;
-  line-height: 1.4;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
-.template-meta {
-  display: flex;
-  gap: 12px;
-  margin-top: 8px;
-  color: #999;
-  font-size: 12px;
-}
-
-.swipe-btn {
-  height: 100%;
-}
-
-.editor {
-  padding: 16px 0;
-}
-
-.form-actions {
-  padding: 16px;
+.m-meta {
+  margin-top: 6px;
 }
 </style>

@@ -1,205 +1,109 @@
 <template>
   <div class="game-tasks">
-    <van-nav-bar
-      title="任务管理"
-      left-arrow
-      @click-left="router.back()"
-    />
+    <van-nav-bar title="飞行棋任务" left-arrow fixed placeholder @click-left="router.back()" />
 
-    <!-- Tab切换 -->
-    <van-tabs v-model:active="activeTab" sticky>
+    <van-tabs v-model:active="activeTab" sticky offset-top="46">
       <van-tab title="预设任务" name="preset">
-        <!-- 分类筛选 -->
-        <div class="filter-section">
-          <van-dropdown-menu>
-            <van-dropdown-item v-model="categoryFilter" :options="categoryOptions" />
-            <van-dropdown-item v-model="difficultyFilter" :options="difficultyOptions" />
-          </van-dropdown-menu>
-        </div>
+        <van-dropdown-menu class="filters">
+          <van-dropdown-item v-model="categoryFilter" :options="categoryOptions" @change="presetList.reset" />
+          <van-dropdown-item v-model="difficultyFilter" :options="difficultyOptions" @change="presetList.reset" />
+        </van-dropdown-menu>
 
-        <!-- 预设任务列表 -->
-        <div v-if="loadingPreset && presetTasks.length === 0" class="loading-state">
-          <van-loading type="spinner" size="24px">加载中...</van-loading>
-        </div>
-        <van-pull-refresh v-else v-model="refreshingPreset" @refresh="onRefreshPreset">
-          <div v-if="presetTasks.length === 0" class="empty-state">
-            <van-empty description="暂无任务" />
-          </div>
-          <div v-else>
-            <div v-for="task in presetTasks" :key="task.id" class="task-card">
-              <div class="task-header">
-                <van-tag :type="getCategoryType(task.category)" size="medium">
-                  {{ getCategoryText(task.category) }}
-                </van-tag>
-                <div class="difficulty">
-                  <van-icon v-for="i in task.difficulty" :key="i" name="star" color="#ffd700" />
-                  <van-icon v-for="i in (3 - task.difficulty)" :key="`e-${i}`" name="star-o" color="#ddd" />
-                </div>
-              </div>
-              <h3 class="task-title">{{ task.title }}</h3>
-              <p class="task-desc">{{ task.description }}</p>
-              <div class="task-footer">
-                <span class="points">
-                  <van-icon name="fire-o" color="#ff976a" />
-                  {{ task.points }}积分
-                </span>
-                <span class="usage">已使用 {{ task.usageCount }} 次</span>
-              </div>
-            </div>
-            <div v-if="!finishedPreset" class="load-more">
-              <van-button size="small" plain @click="loadMorePreset" :loading="loadingPreset">
-                加载更多
-              </van-button>
-            </div>
-          </div>
+        <van-pull-refresh v-model="presetList.refreshing.value" class="m-page" @refresh="presetList.refresh">
+          <van-list
+            v-model:loading="presetList.loading.value"
+            v-model:error="presetList.error.value"
+            :finished="presetList.finished.value"
+            error-text="加载失败，点击重试"
+            @load="presetList.load"
+          >
+            <van-empty
+              v-if="presetList.finished.value && presetList.list.value.length === 0"
+              class="m-empty"
+              description="没有符合条件的任务"
+            />
+            <article v-for="task in presetList.list.value" :key="task.id" class="m-card task-card">
+              <TaskSummary :task="task" />
+            </article>
+          </van-list>
         </van-pull-refresh>
       </van-tab>
 
       <van-tab title="我的任务" name="custom">
-        <!-- 创建按钮 -->
-        <div class="create-section">
-          <van-button type="primary" icon="plus" block @click="showCreateDialog = true">
-            创建自定义任务
-          </van-button>
-        </div>
+        <van-pull-refresh v-model="customList.refreshing.value" class="m-page" @refresh="customList.refresh">
+          <van-button class="create-btn" type="primary" icon="plus" block @click="openCreate">新建任务</van-button>
 
-        <!-- 自定义任务列表 -->
-        <div v-if="loadingCustom && customTasks.length === 0" class="loading-state">
-          <van-loading type="spinner" size="24px">加载中...</van-loading>
-        </div>
-        <van-pull-refresh v-else v-model="refreshingCustom" @refresh="onRefreshCustom">
-          <div v-if="customTasks.length === 0" class="empty-state">
-            <van-empty description="暂无自定义任务">
-              <van-button type="primary" size="small" @click="showCreateDialog = true">
-                创建任务
-              </van-button>
-            </van-empty>
-          </div>
-          <div v-else>
-            <van-swipe-cell v-for="task in customTasks" :key="task.id">
-              <div class="task-card">
-                <div class="task-header">
-                  <van-tag :type="getCategoryType(task.category)" size="medium">
-                    {{ getCategoryText(task.category) }}
-                  </van-tag>
-                  <div class="difficulty">
-                    <van-icon v-for="i in task.difficulty" :key="i" name="star" color="#ffd700" />
-                    <van-icon v-for="i in (3 - task.difficulty)" :key="`e-${i}`" name="star-o" color="#ddd" />
-                  </div>
-                </div>
-                <h3 class="task-title">{{ task.title }}</h3>
-                <p class="task-desc">{{ task.description }}</p>
-                <div class="task-footer">
-                  <span class="points">
-                    <van-icon name="fire-o" color="#ff976a" />
-                    {{ task.points }}积分
-                  </span>
-                  <span class="usage">已使用 {{ task.usageCount }} 次</span>
-                </div>
-              </div>
+          <van-list
+            v-model:loading="customList.loading.value"
+            v-model:error="customList.error.value"
+            :finished="customList.finished.value"
+            error-text="加载失败，点击重试"
+            @load="customList.load"
+          >
+            <van-empty
+              v-if="customList.finished.value && customList.list.value.length === 0"
+              class="m-empty"
+              description="还没有自己的任务，新建一个吧"
+            />
+            <van-swipe-cell v-for="task in customList.list.value" :key="task.id" class="m-card task-card">
+              <TaskSummary :task="task" />
               <template #right>
-                <van-button square type="danger" text="删除" @click="handleDeleteTask(task.id)" />
+                <van-button square type="danger" text="删除" class="m-swipe-btn" @click="handleDeleteTask(task)" />
               </template>
             </van-swipe-cell>
-            <div v-if="!finishedCustom" class="load-more">
-              <van-button size="small" plain @click="loadMoreCustom" :loading="loadingCustom">
-                加载更多
-              </van-button>
-            </div>
-          </div>
+          </van-list>
         </van-pull-refresh>
       </van-tab>
     </van-tabs>
 
-    <!-- 创建任务弹窗 -->
-    <van-popup
-      v-model:show="showCreateDialog"
-      position="bottom"
-      round
-      :style="{ height: '80%' }"
-    >
-      <div class="create-form">
-        <div class="form-header">
-          <span class="title">创建自定义任务</span>
-          <van-icon name="cross" size="20" @click="showCreateDialog = false" />
+    <van-action-sheet v-model:show="showCreateDialog" title="新建任务" :closeable="true">
+      <van-form class="m-sheet" @submit="handleCreateTask">
+        <van-cell-group inset>
+          <van-field
+            v-model.trim="newTask.title"
+            label="标题"
+            placeholder="例如：给对方唱一首歌"
+            maxlength="50"
+            :rules="[{ required: true, message: '请输入标题' }]"
+          />
+          <van-field v-model="newTask.description" label="说明" type="textarea" rows="2" autosize maxlength="200" />
+          <van-field v-model="newTask.requirement" label="完成标准" type="textarea" rows="2" autosize maxlength="200" placeholder="选填" />
+          <van-field label="类别">
+            <template #input>
+              <van-radio-group v-model="newTask.category" direction="horizontal" class="radio-row">
+                <van-radio v-for="option in categoryOptions.slice(1)" :key="option.value" :name="option.value">
+                  {{ option.text }}
+                </van-radio>
+              </van-radio-group>
+            </template>
+          </van-field>
+          <van-field label="难度">
+            <template #input>
+              <van-rate v-model="newTask.difficulty" :count="3" color="var(--ink)" void-color="var(--rule-strong)" />
+            </template>
+          </van-field>
+          <van-field v-model.number="newTask.points" label="积分" type="digit" maxlength="3" placeholder="10" />
+          <van-field v-model.number="newTask.timeLimit" label="限时（秒）" type="digit" maxlength="4" placeholder="不限时" />
+        </van-cell-group>
+
+        <div class="m-sheet-footer">
+          <van-button block type="primary" native-type="submit" :loading="creating">创建</van-button>
         </div>
-
-        <van-form @submit="handleCreateTask">
-          <van-cell-group inset>
-            <van-field
-              v-model="newTask.title"
-              label="任务标题"
-              placeholder="请输入任务标题"
-              :rules="[{ required: true, message: '请输入任务标题' }]"
-            />
-            <van-field
-              v-model="newTask.description"
-              label="任务描述"
-              type="textarea"
-              placeholder="请输入任务描述"
-              rows="3"
-              autosize
-            />
-            <van-field
-              v-model="newTask.requirement"
-              label="完成要求"
-              type="textarea"
-              placeholder="请输入完成要求（可选）"
-              rows="2"
-              autosize
-            />
-            <van-field name="category" label="任务类别">
-              <template #input>
-                <van-radio-group v-model="newTask.category" direction="horizontal">
-                  <van-radio name="romantic">浪漫</van-radio>
-                  <van-radio name="fun">趣味</van-radio>
-                  <van-radio name="challenge">挑战</van-radio>
-                  <van-radio name="intimate">亲密</van-radio>
-                </van-radio-group>
-              </template>
-            </van-field>
-            <van-field name="difficulty" label="难度等级">
-              <template #input>
-                <van-rate v-model="newTask.difficulty" :count="3" />
-              </template>
-            </van-field>
-            <van-field
-              v-model.number="newTask.points"
-              label="积分"
-              type="number"
-              placeholder="10"
-            />
-            <van-field
-              v-model.number="newTask.timeLimit"
-              label="时间限制(秒)"
-              type="number"
-              placeholder="不限时"
-            />
-          </van-cell-group>
-
-          <div class="form-actions">
-            <van-button block type="primary" native-type="submit">
-              创建任务
-            </van-button>
-          </div>
-        </van-form>
-      </div>
-    </van-popup>
+      </van-form>
+    </van-action-sheet>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, onMounted } from 'vue'
+import { defineComponent, h, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { showToast, showDialog, showLoadingToast, closeToast } from 'vant'
+import { showConfirmDialog, showFailToast, showSuccessToast } from 'vant'
 import { gameTaskApi, type GameTask } from '@/services/api'
+import { usePagedList } from '@/composables/usePagedList'
 
 const router = useRouter()
-
-// Tab状态
 const activeTab = ref('preset')
 
-// 筛选选项
 const categoryFilter = ref('')
 const difficultyFilter = ref<number | ''>('')
 
@@ -218,321 +122,178 @@ const difficultyOptions = [
   { text: '困难', value: 3 }
 ]
 
-// 预设任务
-const presetTasks = ref<GameTask[]>([])
-const loadingPreset = ref(false)
-const finishedPreset = ref(false)
-const refreshingPreset = ref(false)
-const presetPageNum = ref(1)
+const categoryText = (category: string): string =>
+  categoryOptions.find(option => option.value === category)?.text || '其他'
 
-// 自定义任务
-const customTasks = ref<GameTask[]>([])
-const loadingCustom = ref(false)
-const finishedCustom = ref(false)
-const refreshingCustom = ref(false)
-const customPageNum = ref(1)
+// 筛选变化时 reset() 会让旧请求作废，迟到的旧结果不会写进新列表
+const presetList = usePagedList<GameTask>((pageNum, pageSize) =>
+  gameTaskApi.getPresetTasks({
+    category: categoryFilter.value || undefined,
+    difficulty: difficultyFilter.value || undefined,
+    pageNum,
+    pageSize,
+  })
+)
+const customList = usePagedList<GameTask>((pageNum, pageSize) => gameTaskApi.getUserCustomTasks(pageNum, pageSize))
 
-// 创建任务
+/** 任务卡片内容；难度限定在 1–3，避免异常数据让星星数量为负 */
+const TaskSummary = defineComponent({
+  props: { task: { type: Object as () => GameTask, required: true } },
+  setup(props) {
+    return () => {
+      const difficulty = Math.min(3, Math.max(1, Math.round(props.task.difficulty || 1)))
+      return h('div', { class: 'task-summary' }, [
+        h('div', { class: 'task-head' }, [
+          h('span', { class: 'task-category' }, categoryText(props.task.category)),
+          h('span', { class: 'task-difficulty', 'aria-label': `难度 ${difficulty}` }, [
+            h('b', '★'.repeat(difficulty)),
+            '★'.repeat(3 - difficulty),
+          ]),
+        ]),
+        h('h3', { class: 'm-title task-title' }, props.task.title),
+        props.task.description ? h('p', { class: 'task-desc' }, props.task.description) : null,
+        h('div', { class: 'm-meta task-meta' }, [
+          h('span', `${props.task.points} 积分`),
+          props.task.timeLimit ? h('span', `限时 ${props.task.timeLimit} 秒`) : null,
+          h('span', `用过 ${props.task.usageCount || 0} 次`),
+        ]),
+      ])
+    }
+  },
+})
+
 const showCreateDialog = ref(false)
+const creating = ref(false)
 const newTask = reactive({
   title: '',
   description: '',
   requirement: '',
   category: 'romantic',
   difficulty: 1,
-  points: 10,
-  timeLimit: undefined as number | undefined
+  points: 10 as number | '',
+  timeLimit: '' as number | '',
 })
 
-// 方法
-function getCategoryType(category: string): 'primary' | 'success' | 'warning' | 'danger' {
-  switch (category) {
-    case 'romantic': return 'danger'
-    case 'fun': return 'success'
-    case 'challenge': return 'warning'
-    case 'intimate': return 'primary'
-    default: return 'primary'
-  }
+function openCreate(): void {
+  Object.assign(newTask, {
+    title: '',
+    description: '',
+    requirement: '',
+    category: 'romantic',
+    difficulty: 1,
+    points: 10,
+    timeLimit: '',
+  })
+  showCreateDialog.value = true
 }
 
-function getCategoryText(category: string): string {
-  switch (category) {
-    case 'romantic': return '浪漫'
-    case 'fun': return '趣味'
-    case 'challenge': return '挑战'
-    case 'intimate': return '亲密'
-    default: return '其他'
-  }
-}
-
-// 预设任务加载
-async function loadMorePreset() {
-  if (loadingPreset.value || finishedPreset.value) return
-
-  loadingPreset.value = true
-  try {
-    const response: any = await gameTaskApi.getPresetTasks({
-      category: categoryFilter.value || undefined,
-      difficulty: difficultyFilter.value || undefined,
-      pageNum: presetPageNum.value,
-      pageSize: 10
-    })
-
-    const newTasks = response?.records || []
-
-    if (presetPageNum.value === 1) {
-      presetTasks.value = newTasks
-    } else {
-      presetTasks.value = [...presetTasks.value, ...newTasks]
-    }
-
-    if (newTasks.length < 10) {
-      finishedPreset.value = true
-    } else {
-      presetPageNum.value++
-    }
-  } catch (error: any) {
-    showToast({ type: 'fail', message: error.message || '加载失败' })
-    finishedPreset.value = true
-  } finally {
-    loadingPreset.value = false
-  }
-}
-
-async function onRefreshPreset() {
-  presetPageNum.value = 1
-  finishedPreset.value = false
-  await loadMorePreset()
-  refreshingPreset.value = false
-}
-
-// 自定义任务加载
-async function loadMoreCustom() {
-  if (loadingCustom.value || finishedCustom.value) return
-
-  loadingCustom.value = true
-  try {
-    const response: any = await gameTaskApi.getUserCustomTasks(customPageNum.value, 10)
-
-    const newTasks = response.records || []
-    if (customPageNum.value === 1) {
-      customTasks.value = newTasks
-    } else {
-      customTasks.value = [...customTasks.value, ...newTasks]
-    }
-
-    if (newTasks.length < 10) {
-      finishedCustom.value = true
-    } else {
-      customPageNum.value++
-    }
-  } catch (error: any) {
-    showToast({ type: 'fail', message: error.message || '加载失败' })
-    finishedCustom.value = true  // 出错时也标记完成，避免无限加载
-  } finally {
-    loadingCustom.value = false
-  }
-}
-
-async function onRefreshCustom() {
-  customPageNum.value = 1
-  finishedCustom.value = false
-  await loadMoreCustom()
-  refreshingCustom.value = false
-}
-
-// 创建任务
-async function handleCreateTask() {
-  showLoadingToast({ message: '创建中...', forbidClick: true })
-
+async function handleCreateTask(): Promise<void> {
+  creating.value = true
   try {
     await gameTaskApi.createCustomTask({
       title: newTask.title,
-      description: newTask.description,
-      requirement: newTask.requirement,
+      description: newTask.description.trim(),
+      requirement: newTask.requirement.trim(),
       category: newTask.category,
       difficulty: newTask.difficulty,
-      points: newTask.points || 10,
-      timeLimit: newTask.timeLimit || undefined
+      points: Number(newTask.points) || 10,
+      timeLimit: Number(newTask.timeLimit) || undefined,
     })
-
-    closeToast()
-    showToast({ type: 'success', message: '创建成功' })
-
-    // 重置表单
-    newTask.title = ''
-    newTask.description = ''
-    newTask.requirement = ''
-    newTask.category = 'romantic'
-    newTask.difficulty = 1
-    newTask.points = 10
-    newTask.timeLimit = undefined
-
+    showSuccessToast('已创建')
     showCreateDialog.value = false
-
-    // 刷新列表
-    customPageNum.value = 1
-    finishedCustom.value = false
-    customTasks.value = []
-    await loadMoreCustom()
+    activeTab.value = 'custom'
+    customList.reset()
   } catch (error: any) {
-    closeToast()
-    showToast({ type: 'fail', message: error.response?.data?.message || '创建失败' })
+    showFailToast(error.message || '创建失败')
+  } finally {
+    creating.value = false
   }
 }
 
-// 删除任务
-async function handleDeleteTask(taskId: number) {
+async function handleDeleteTask(task: GameTask): Promise<void> {
   try {
-    await showDialog({
-      title: '提示',
-      message: '确定要删除这个任务吗？',
-      showCancelButton: true
-    })
-
-    await gameTaskApi.deleteCustomTask(taskId)
-    showToast({ type: 'success', message: '删除成功' })
-
-    // 从列表中移除
-    customTasks.value = customTasks.value.filter(t => t.id !== taskId)
-  } catch (error) {
-    // 用户取消或删除失败
+    await showConfirmDialog({ title: '删除任务', message: `确定删除"${task.title}"吗？` })
+  } catch {
+    return
+  }
+  try {
+    await gameTaskApi.deleteCustomTask(task.id)
+    showSuccessToast('已删除')
+    customList.refresh()
+  } catch (error: any) {
+    showFailToast(error.message || '删除失败')
   }
 }
-
-// 监听筛选变化
-watch([categoryFilter, difficultyFilter], () => {
-  presetPageNum.value = 1
-  finishedPreset.value = false
-  presetTasks.value = []
-  loadMorePreset()
-})
-
-// 监听Tab切换
-watch(activeTab, (newTab) => {
-  if (newTab === 'preset' && presetTasks.value.length === 0) {
-    loadMorePreset()
-  } else if (newTab === 'custom' && customTasks.value.length === 0) {
-    loadMoreCustom()
-  }
-})
-
-// 初始化加载
-onMounted(() => {
-  loadMorePreset()
-})
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .game-tasks {
-  min-height: 100vh;
-  background-color: #f7f8fa;
-  padding-bottom: 60px;
+  min-height: 100%;
+  background: var(--bg);
 }
 
-.filter-section {
-  background: white;
-  margin-bottom: 12px;
+.filters :deep(.van-dropdown-menu__bar) {
+  box-shadow: none;
+  border-bottom: 1px solid var(--rule);
 }
 
-.create-section {
-  padding: 12px;
-}
-
-.empty-state {
-  padding: 40px 0;
-}
-
-.loading-state {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 60px 0;
-}
-
-.load-more {
-  display: flex;
-  justify-content: center;
-  padding: 16px;
+.create-btn {
+  margin-bottom: 10px;
 }
 
 .task-card {
-  background: white;
-  padding: 16px;
-  margin: 0 12px 12px;
-  border-radius: 12px;
-
-  .task-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-
-    .difficulty {
-      display: flex;
-      gap: 2px;
-    }
-  }
-
-  .task-title {
-    font-size: 16px;
-    color: #323233;
-    margin-bottom: 8px;
-  }
-
-  .task-desc {
-    font-size: 14px;
-    color: #969799;
-    margin-bottom: 12px;
-    line-height: 1.5;
-  }
-
-  .task-footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 12px;
-
-    .points {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      color: #ff976a;
-    }
-
-    .usage {
-      color: #c8c9cc;
-    }
-  }
+  overflow: hidden;
 }
 
-.create-form {
-  height: 100%;
+.task-card + .task-card {
+  margin-top: 8px;
+}
+
+.task-card :deep(.task-summary) {
+  padding: 14px 16px;
+}
+
+.task-card :deep(.task-head) {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--ink-3);
+  font-size: 12px;
+}
 
-  .form-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px;
-    border-bottom: 1px solid #ebedf0;
+.task-card :deep(.task-category) {
+  color: var(--ink-2);
+  font-weight: 500;
+}
 
-    .title {
-      font-size: 16px;
-      font-weight: 500;
-    }
-  }
+.task-card :deep(.task-difficulty) {
+  color: var(--rule-strong);
+  letter-spacing: 1px;
+}
 
-  .van-form {
-    flex: 1;
-    overflow-y: auto;
-    padding: 12px 0;
-  }
+.task-card :deep(.task-difficulty b) {
+  color: var(--ink);
+  font-weight: 400;
+}
 
-  .form-actions {
-    padding: 12px 16px;
-    border-top: 1px solid #ebedf0;
-  }
+.task-card :deep(.task-title) {
+  margin-top: 6px;
+}
+
+.task-card :deep(.task-desc) {
+  margin-top: 4px;
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.task-card :deep(.task-meta) {
+  margin-top: 8px;
+}
+
+.radio-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
 }
 </style>

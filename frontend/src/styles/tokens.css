@@ -1,0 +1,132 @@
+/*
+ * 设计 token：移动端（Vant）和管理端（Arco）共用一套。
+ *
+ * - 只有一个主色 --accent，沿用项目里已有的靛蓝 #4f46e5。
+ * - --ok / --danger 只表达"已批准 / 已驳回"和危险操作，不做装饰。
+ * - 层次靠字号和留白，表面靠发丝线区分；阴影只给浮层用。
+ * - 字体选系统中文栈：这是中文界面，系统字体在各平台都最清晰，不额外加载网络字体。
+ *
+ * 本文件必须在 arco.css 和 vant 的 index.css 之后引入，才能覆盖它们的变量。
+ */
+
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f2f3f5;
+  --rule: #e6e8ec;
+  --rule-strong: #d5d8de;
+
+  --ink: #1f2329;
+  --ink-2: #646a73;
+  --ink-3: #8f959e;
+
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-soft: #eef0fe;
+
+  --ok: #00b42a;
+  --ok-soft: #e8f7ec;
+  --ok-ink: #00801e;
+  --danger: #dc2626;
+  --danger-soft: #fdeceb;
+
+  --radius: 8px;
+  --radius-sm: 4px;
+  --elev: 0 1px 2px rgba(0, 0, 0, 0.06), 0 4px 10px -6px rgba(0, 0, 0, 0.1);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Vant 主题 */
+  --van-primary-color: var(--accent);
+  --van-success-color: var(--ok);
+  --van-danger-color: var(--danger);
+  --van-warning-color: var(--accent);
+  --van-text-color: var(--ink);
+  --van-text-color-2: var(--ink-2);
+  --van-text-color-3: var(--ink-3);
+  --van-border-color: var(--rule);
+  --van-background: var(--bg);
+  --van-background-2: var(--surface);
+  --van-active-color: var(--surface-2);
+  --van-base-font: var(--font-sans);
+  --van-radius-md: var(--radius-sm);
+  --van-radius-lg: var(--radius);
+  --van-button-radius: var(--radius);
+  --van-tag-radius: var(--radius-sm);
+  --van-nav-bar-icon-color: var(--ink);
+  --van-nav-bar-text-color: var(--accent);
+  --van-nav-bar-title-text-color: var(--ink);
+  --van-nav-bar-title-font-size: 17px;
+  --van-tab-text-color: var(--ink-2);
+  --van-tab-active-text-color: var(--ink);
+  --van-tabs-bottom-bar-color: var(--accent);
+  --van-tabs-bottom-bar-width: 24px;
+  --van-tag-default-color: var(--ink-3);
+  --van-cell-label-color: var(--ink-3);
+  --van-cell-value-color: var(--ink-2);
+  --van-dialog-radius: 12px;
+  --van-popup-round-radius: 12px;
+}
+
+/* Arco 主题：变量写在 body 上，弹层被传送到 body 后同样生效 */
+body {
+  --primary-1: 238, 242, 255;
+  --primary-2: 224, 231, 255;
+  --primary-3: 199, 210, 254;
+  --primary-4: 165, 180, 252;
+  --primary-5: 99, 102, 241;
+  --primary-6: 79, 70, 229;
+  --primary-7: 67, 56, 202;
+  --primary-8: 55, 48, 163;
+  --primary-9: 49, 46, 129;
+  --link-6: 79, 70, 229;
+  --danger-1: 254, 242, 242;
+  --danger-2: 254, 226, 226;
+  --danger-3: 254, 202, 202;
+  --danger-4: 252, 165, 165;
+  --danger-5: 239, 68, 68;
+  --danger-6: 220, 38, 38;
+  --danger-7: 185, 28, 28;
+
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-size: inherit;
+  font-weight: 600;
+}
+
+p {
+  margin: 0;
+}
+
+/* Vant 全局去掉了 focus outline，这里给键盘操作补回可见的焦点 */
+a:focus-visible,
+button:focus-visible,
+[role='button']:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
