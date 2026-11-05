@@ -4,7 +4,7 @@
       v-for="(tile, index) in tiles"
       :key="index"
       :tile="tile"
-      size="xs"
+      size="river"
       :rotate="SIDE_ROTATION[side]"
       :wild="tile === wild"
       :latest="highlightLast && index === tiles.length - 1"
@@ -27,15 +27,19 @@ const props = withDefaults(defineProps<{
   animateLast?: boolean
   /** 两人桌左右没人，牌河可以排得更宽 */
   wide?: boolean
+  /** 一行（左右两家是一列）放几张；不传按竖屏默认值 */
+  perLine?: number | null
 }>(), {
   wild: null,
   highlightLast: false,
   animateLast: false,
-  wide: false
+  wide: false,
+  perLine: null
 })
 
 /** 上下两家一行 8 张；左右两家一列 10 张（竖着放得下，横向不会挤到座位上）；两人桌一行 10 张 */
 const perLine = computed(() => {
+  if (props.perLine) return props.perLine
   if (props.side === 'left' || props.side === 'right') return 10
   return props.wide ? 10 : 8
 })
@@ -47,8 +51,7 @@ const perLine = computed(() => {
  * 下家（自己）一行行往下，上方那家一行行往上，左右两家一列列往外。
  */
 .river {
-  --slot-w: 17px;
-  --slot-h: calc(17px * 1.36);
+  --slot-w: var(--mj-river-w, 17px);
   gap: 1px;
 }
 

@@ -1,5 +1,5 @@
 <template>
-  <div class="table-seat" :class="[`side-${side}`, { 'is-active': active }]">
+  <div class="table-seat" :class="[`side-${side}`, { 'is-active': active, landscape }]">
     <MahjongSeatPlate
       :info="info"
       :wind="wind"
@@ -9,6 +9,7 @@
       :auto-play="seat.autoPlay"
       :flowers="seat.flowers.length"
       :compact="side !== 'top'"
+      :large="large"
       @inspect="emit('inspect')"
     />
 
@@ -20,12 +21,12 @@
               v-for="(tile, i) in meld.tiles"
               :key="i"
               :tile="tile"
-              size="xs"
+              size="seat"
               :rotate="rotation"
             />
           </template>
           <template v-else>
-            <MahjongTile v-for="i in 4" :key="i" size="xs" :rotate="rotation" />
+            <MahjongTile v-for="i in 4" :key="i" size="seat" :rotate="rotation" />
           </template>
         </span>
       </div>
@@ -35,7 +36,7 @@
           v-for="(tile, i) in revealedHand"
           :key="`r-${i}`"
           :tile="tile"
-          size="xs"
+          size="seat"
           :rotate="rotation"
           :wild="tile === wild"
           class="flip-in"
@@ -46,7 +47,7 @@
         <MahjongTile
           v-for="i in seat.handCount"
           :key="`${dealKey}-${i}`"
-          :size="side === 'top' ? 'xs' : 'sm'"
+          size="back"
           stand
           :rotate="rotation"
           class="deal-in"
@@ -81,13 +82,19 @@ const props = withDefaults(defineProps<{
   wild?: number | null
   /** 每局变化，让发牌动画重新播放 */
   dealKey?: string | number
+  /** 手机横屏：名牌放在牌的旁边，省出高度 */
+  landscape?: boolean
+  /** 平板：名牌放大 */
+  large?: boolean
 }>(), {
   info: null,
   wind: '',
   dealer: false,
   active: false,
   wild: null,
-  dealKey: 0
+  dealKey: 0,
+  landscape: false,
+  large: false
 })
 
 const emit = defineEmits<{
@@ -118,6 +125,33 @@ function meldLabel(meld: MahjongMeld): string {
   flex-direction: column;
   align-items: center;
   gap: 6px;
+}
+
+/* 左右两家的立牌横着放，用单独的尺寸 */
+.side-left,
+.side-right {
+  --mj-back-w: var(--mj-side-back-w, 20px);
+}
+
+/* 横屏：高度紧，名牌放到牌的外侧 */
+.landscape.side-top,
+.landscape.side-left {
+  flex-direction: row;
+}
+
+.landscape.side-right {
+  flex-direction: row-reverse;
+}
+
+/* 横屏左右两家：副露一列、暗牌一列，并排放，不往上下顶到顶栏和手牌 */
+.landscape.side-left .seat-tiles {
+  flex-direction: row;
+  align-items: center;
+}
+
+.landscape.side-right .seat-tiles {
+  flex-direction: row-reverse;
+  align-items: center;
 }
 
 .seat-tiles {
@@ -173,7 +207,7 @@ function meldLabel(meld: MahjongMeld): string {
 
 .side-left .hand > .mj-slot + .mj-slot,
 .side-right .hand > .mj-slot + .mj-slot {
-  margin-top: -5px;
+  margin-top: calc(var(--mj-side-back-w, 20px) * -0.25);
 }
 
 .side-top .hand > .is-drawn {

@@ -1,10 +1,14 @@
 <template>
-  <div class="mj-room">
+  <div class="mj-room" :style="theme.cssVars.value">
     <div v-if="!room" class="table loading">
       <van-loading size="24px" vertical color="#f6c453">正在进入房间...</van-loading>
     </div>
 
-    <div v-else class="table" :class="[`seats-${room.seatCount}`, { waiting: !inGame }]">
+    <div
+      v-else
+      class="table"
+      :class="[`seats-${room.seatCount}`, { waiting: !inGame, 'is-landscape': viewport.landscape.value, 'is-large': viewport.large.value }]"
+    >
       <!-- 顶栏 -->
       <header class="top-bar">
         <button type="button" class="icon-btn" aria-label="返回大厅" @click="goBack">
@@ -30,6 +34,9 @@
         <button type="button" class="icon-btn" aria-label="刷新" @click="refresh">
           <van-icon name="replay" />
         </button>
+        <button type="button" class="icon-btn" aria-label="牌桌外观" @click="showTheme = true">
+          <van-icon name="brush-o" />
+        </button>
         <button type="button" class="icon-btn" aria-label="规则" @click="showRules = true">
           <van-icon name="question-o" />
         </button>
@@ -50,6 +57,7 @@
               :name="seat.seatIndex === store.mySeat ? '你' : ''"
               :show-score="false"
               :compact="isSideSeat(seat.seatIndex)"
+              :large="viewport.large.value"
             />
             <span class="wait-note">{{ seatNote(seat) }}</span>
             <template v-if="store.isOwner && store.isWaiting && seat.seatIndex > 0">
@@ -93,6 +101,8 @@
             :active="isActiveSeat(item.seat.seat)"
             :wild="round.wild ?? null"
             :deal-key="round.roundNo"
+            :landscape="viewport.landscape.value"
+            :large="viewport.large.value"
             @inspect="inspectSeat = item.seat.seat"
           />
 
@@ -107,6 +117,7 @@
               :highlight-last="river.highlight"
               :animate-last="spotlight?.side === river.side"
               :wide="seatCount === 2"
+              :per-line="riverPerLine(river.side)"
             />
             <MahjongCompass
               class="board-compass"
@@ -195,21 +206,19 @@
               :qiao="!!myPublicSeat?.qiao"
               :auto-play="!!myPublicSeat?.autoPlay"
               :flowers="myPublicSeat?.flowers.length ?? 0"
+              :large="viewport.large.value"
               @inspect="inspectSeat = store.mySeat"
             />
             <p class="my-hint">{{ dockHint }}</p>
-            <template v-if="store.isFinished">
+            <div v-if="store.isFinished" class="finish-btns">
               <button type="button" class="pill-btn ghost small" @click="showResult = true">结算</button>
               <button v-if="store.isOwner" type="button" class="pill-btn primary small" :disabled="busy" @click="nextRound">
                 再来一局
               </button>
-            </template>
+            </div>
           </div>
 
-          <div
-            class="my-tiles"
-            :style="{ '--hand-tile-w': handTileWidth, '--meld-tile-w': `${MELD_TILE_W}px` }"
-          >
+          <div class="my-tiles" :style="{ '--hand-tile-w': handTileWidth }">
             <div v-if="myMelds.length" class="my-melds">
               <span v-for="(meld, index) in myMelds" :key="`m-${index}`" class="my-meld">
                 <MahjongTile
@@ -262,7 +271,7 @@
       @select="onChiSelect"
     />
 
-    <van-popup v-model:show="showResult" position="bottom" round closeable :style="{ maxHeight: '88%' }">
+    <van-popup v-model:show="showResult" class="mj-sheet" position="bottom" round closeable :style="{ maxHeight: '88%' }">
       <MahjongResultSheet
         v-if="round?.result"
         :result="round.result"
@@ -277,7 +286,7 @@
       />
     </van-popup>
 
-    <van-popup v-model:show="inspectOpen" position="bottom" round closeable>
+    <van-popup v-model:show="inspectOpen" class="mj-sheet" position="bottom" round closeable :style="{ maxHeight: '80%' }">
       <div v-if="inspected" class="inspect">
         <div class="m-sheet-title">{{ inspected.name }}</div>
         <p class="inspect-meta">
@@ -297,7 +306,59 @@
       </div>
     </van-popup>
 
-    <van-popup v-model:show="showRules" position="bottom" round closeable :style="{ maxHeight: '80%' }">
+    <van-popup v-model:show="showTheme" class="mj-sheet" position="bottom" round closeable>
+      <div class="theme-sheet">
+        <div class="m-sheet-title">牌桌外观</div>
+        <p class="theme-label">桌布</p>
+        <div class="theme-options" role="radiogroup" aria-label="桌布颜色">
+          <button
+            v-for="item in FELT_THEMES"
+            :key="item.key"
+            type="button"
+            class="felt-swatch"
+            :class="{ active: theme.feltKey.value === item.key }"
+            role="radio"
+            :aria-checked="theme.feltKey.value === item.key"
+            @click="theme.setFelt(item.key)"
+          >
+            <span
+              class="felt-chip"
+              :style="{ background: `radial-gradient(circle at 50% 40%, ${item.felt[0]} 0%, ${item.felt[1]} 55%, ${item.felt[2]} 100%)` }"
+            />
+            <span class="swatch-name">{{ item.name }}</span>
+          </button>
+        </div>
+        <p class="theme-label">牌背</p>
+        <div class="theme-options" role="radiogroup" aria-label="牌背颜色">
+          <button
+            v-for="item in BACK_THEMES"
+            :key="item.key"
+            type="button"
+            class="back-swatch"
+            :class="{ active: theme.backKey.value === item.key }"
+            role="radio"
+            :aria-checked="theme.backKey.value === item.key"
+            @click="theme.setBack(item.key)"
+          >
+            <span
+              class="back-chip"
+              :style="{ background: `linear-gradient(180deg, ${item.colors[0]} 0%, ${item.colors[1]} 60%, ${item.colors[2]} 100%)` }"
+            />
+            <span class="swatch-name">{{ item.name }}</span>
+          </button>
+        </div>
+        <div class="theme-preview" aria-hidden="true">
+          <MahjongTile :tile="15" size="md" />
+          <MahjongTile :tile="27" size="md" />
+          <MahjongTile :tile="41" size="md" />
+          <MahjongTile size="md" stand />
+          <MahjongTile size="md" stand />
+        </div>
+        <p class="theme-hint">只改变这台设备上的显示，不影响其他人。</p>
+      </div>
+    </van-popup>
+
+    <van-popup v-model:show="showRules" class="mj-sheet" position="bottom" round closeable :style="{ maxHeight: '80%' }">
       <div class="rules">
         <div class="m-sheet-title">上海麻将规则</div>
         <h4>共同</h4>
@@ -353,6 +414,8 @@ import {
 } from '@/services/mahjongApi'
 import { useMahjongStore } from '@/store/modules/mahjong'
 import { copyText } from '@/utils/clipboard'
+import { useViewport } from '@/composables/useViewport'
+import { BACK_THEMES, FELT_THEMES, useMahjongTheme } from '@/composables/useMahjongTheme'
 
 interface HandItem {
   key: string
@@ -379,7 +442,6 @@ interface Burst {
 
 const TURN_LIMIT = 20
 const CLAIM_LIMIT = 10
-const MELD_TILE_W = 19
 /** 往上滑超过这么多像素就算打出 */
 const SWIPE_DISCARD_PX = 28
 
@@ -398,8 +460,11 @@ const BURST_KIND: Record<string, string> = {
 const route = useRoute()
 const router = useRouter()
 const store = useMahjongStore()
+const viewport = useViewport()
+const theme = useMahjongTheme()
 
 const showRules = ref(false)
+const showTheme = ref(false)
 const showResult = ref(false)
 const showChiSheet = ref(false)
 const busy = ref(false)
@@ -567,14 +632,28 @@ const handTiles = computed<HandItem[]>(() => {
   return items
 })
 
-/** 手牌排成一行：扣掉副露、牌间 2px 间隙和刚摸那张前面的空隙 */
+/**
+ * 手牌排成一行：可用宽度扣掉左右留白（横屏还要扣掉左边的名牌，--mj-hand-reserve）、
+ * 副露（每张 --mj-meld-w）、牌间 2px 间隙和刚摸那张前面的空隙，上限 --mj-hand-max。
+ */
 const handTileWidth = computed(() => {
   const count = Math.max(handTiles.value.length, 8)
   const meldTiles = myMelds.value.reduce((sum, meld) => sum + meld.tiles.length, 0)
-  const meldPx = meldTiles * MELD_TILE_W + myMelds.value.length * 4 + (myMelds.value.length ? 8 : 0)
-  const gaps = (count - 1) * 2
-  return `min(46px, calc((min(100vw, 760px) - 20px - ${meldPx + gaps}px) / ${count + 0.4}))`
+  const fixedPx = (count - 1) * 2 + myMelds.value.length * 4 + (myMelds.value.length ? 8 : 0)
+  return `min(var(--mj-hand-max, 46px), calc((100vw - var(--mj-hand-reserve, 20px) - ${meldTiles} * var(--mj-meld-w, 19px) - ${fixedPx}px) / ${count + 0.4}))`
 })
+
+/** 牌河一行（左右两家是一列）放几张：横屏高度紧，左右两家每列放得少、上下两家每行放得多 */
+function riverPerLine(side: TableSide): number {
+  const sideways = side === 'left' || side === 'right'
+  if (viewport.landscape.value) {
+    if (sideways) return viewport.large.value ? 7 : 5
+    return seatCount.value === 2 ? 18 : 12
+  }
+  if (sideways) return 10
+  if (seatCount.value === 2) return viewport.large.value ? 14 : 10
+  return 8
+}
 
 const selectedTile = computed(() => {
   const item = handTiles.value.find(entry => entry.key === selectedKey.value)
@@ -995,11 +1074,23 @@ onUnmounted(() => {
   height: 100%;
 }
 
+/*
+ * 牌桌尺寸随布局变化：手机竖屏（默认）、手机横屏（is-landscape）、平板（is-large）。
+ * 颜色来自房间根元素上的主题变量（useMahjongTheme），这里只写兜底值。
+ */
 .table {
-  --felt-1: #2c7b58;
-  --felt-2: #1c5c41;
-  --felt-3: #0d3a29;
   --gold: #f6c453;
+  --mj-river-w: 17px;
+  --mj-seat-w: 17px;
+  --mj-back-w: 17px;
+  --mj-side-back-w: 20px;
+  --mj-meld-w: 19px;
+  --mj-hand-max: 46px;
+  --mj-hand-reserve: 20px;
+  --mj-compass: 92px;
+  --mj-lg-w: 46px;
+  --mj-act: 56px;
+  --mj-fx: 1;
 
   position: relative;
   display: flex;
@@ -1007,9 +1098,50 @@ onUnmounted(() => {
   height: 100%;
   min-height: 100%;
   overflow: hidden;
-  background: var(--felt-3);
+  background: var(--felt-3, #0d3a29);
   color: #fff;
   user-select: none;
+}
+
+.table.is-landscape {
+  --mj-river-w: 16px;
+  --mj-seat-w: 15px;
+  --mj-back-w: 15px;
+  --mj-side-back-w: 16px;
+  --mj-meld-w: 24px;
+  --mj-hand-reserve: calc(200px + env(safe-area-inset-left) + env(safe-area-inset-right));
+  --mj-compass: 78px;
+  --mj-lg-w: 42px;
+  --mj-act: 50px;
+  --mj-fx: 0.85;
+}
+
+.table.is-large {
+  --mj-river-w: 24px;
+  --mj-seat-w: 22px;
+  --mj-back-w: 22px;
+  --mj-side-back-w: 28px;
+  --mj-meld-w: 30px;
+  --mj-hand-max: 60px;
+  --mj-hand-reserve: 48px;
+  --mj-compass: 128px;
+  --mj-lg-w: 64px;
+  --mj-act: 70px;
+  --mj-fx: 1.35;
+}
+
+.table.is-large.is-landscape {
+  --mj-river-w: 22px;
+  --mj-seat-w: 20px;
+  --mj-back-w: 20px;
+  --mj-side-back-w: 22px;
+  --mj-meld-w: 30px;
+  --mj-hand-max: 58px;
+  --mj-hand-reserve: calc(260px + env(safe-area-inset-left) + env(safe-area-inset-right));
+  --mj-compass: 118px;
+  --mj-lg-w: 60px;
+  --mj-act: 64px;
+  --mj-fx: 1.2;
 }
 
 .table.loading {
@@ -1073,7 +1205,12 @@ onUnmounted(() => {
   position: relative;
   flex: 1;
   min-height: 0;
-  background: radial-gradient(ellipse 120% 90% at 50% 46%, var(--felt-1) 0%, var(--felt-2) 48%, var(--felt-3) 100%);
+  background: radial-gradient(
+    ellipse 120% 90% at 50% 46%,
+    var(--felt-1, #2c7b58) 0%,
+    var(--felt-2, #1c5c41) 48%,
+    var(--felt-3, #0d3a29) 100%
+  );
 }
 
 /* 呢面纹理和四周压暗 */
@@ -1121,14 +1258,45 @@ onUnmounted(() => {
   transform: translateY(-50%);
 }
 
+.is-landscape .seat-anchor.at-top {
+  top: 34px;
+}
+
+.is-landscape .seat-anchor.at-left {
+  top: 50%;
+  left: calc(8px + env(safe-area-inset-left));
+}
+
+.is-landscape .seat-anchor.at-right {
+  top: 50%;
+  right: calc(8px + env(safe-area-inset-right));
+}
+
+.is-large .seat-anchor.at-top {
+  top: 16px;
+}
+
+.is-large .seat-anchor.at-left {
+  left: 14px;
+}
+
+.is-large .seat-anchor.at-right {
+  right: 14px;
+}
+
+.is-large.is-landscape .seat-anchor.at-top {
+  top: 48px;
+}
+
 /* ------------------------------------------------ 中间：牌河 + 方位盘 */
 
 .board {
   --board-top: 88px;
   --board-x: 74px;
+  --board-bottom: 8px;
 
   position: absolute;
-  inset: var(--board-top) var(--board-x) 8px;
+  inset: var(--board-top) var(--board-x) var(--board-bottom);
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   grid-template-rows: 1fr auto 1fr;
@@ -1143,6 +1311,47 @@ onUnmounted(() => {
 
 .seats-2 .board {
   --board-x: 12px;
+}
+
+.is-landscape .board {
+  --board-top: 84px;
+  --board-x: calc(118px + env(safe-area-inset-left));
+  --board-bottom: 6px;
+}
+
+.is-landscape.seats-3 .board {
+  --board-top: 40px;
+}
+
+.is-landscape.seats-2 .board {
+  --board-x: 24px;
+}
+
+.is-large .board {
+  --board-top: 150px;
+  --board-x: 132px;
+  --board-bottom: 18px;
+}
+
+.is-large.seats-3 .board {
+  --board-top: 30px;
+}
+
+.is-large.seats-2 .board {
+  --board-x: 30px;
+}
+
+.is-large.is-landscape .board {
+  --board-top: 130px;
+  --board-x: 190px;
+}
+
+.is-large.is-landscape.seats-3 .board {
+  --board-top: 64px;
+}
+
+.is-large.is-landscape.seats-2 .board {
+  --board-x: 40px;
 }
 
 .river-top {
@@ -1233,7 +1442,7 @@ onUnmounted(() => {
   padding: 16px 14px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 18px;
-  background: rgba(5, 24, 17, 0.7);
+  background: var(--mj-panel, rgba(5, 24, 17, 0.78));
   text-align: center;
   transform: translate(-50%, -50%);
 }
@@ -1264,7 +1473,7 @@ onUnmounted(() => {
   flex-shrink: 0;
   padding: 6px 10px calc(8px + env(safe-area-inset-bottom));
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: linear-gradient(180deg, #123f2e 0%, #0b2c20 100%);
+  background: linear-gradient(180deg, var(--mj-dock-1, #123f2e) 0%, var(--mj-dock-2, #0b2c20) 100%);
 }
 
 .wait-actions {
@@ -1321,6 +1530,12 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   min-height: 40px;
+}
+
+.finish-btns {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
 }
 
 .my-hint {
@@ -1412,8 +1627,8 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  height: 56px;
+  width: var(--mj-act);
+  height: var(--mj-act);
   border: 2px solid rgba(255, 255, 255, 0.85);
   border-radius: 50%;
   color: #fff;
@@ -1434,7 +1649,7 @@ onUnmounted(() => {
 }
 
 .act-label {
-  font-size: 22px;
+  font-size: calc(var(--mj-act) * 0.4);
   font-weight: 800;
   line-height: 1;
 }
@@ -1447,13 +1662,13 @@ onUnmounted(() => {
 }
 
 .act-btn.kind-hu {
-  width: 64px;
-  height: 64px;
+  width: calc(var(--mj-act) * 1.15);
+  height: calc(var(--mj-act) * 1.15);
   background: radial-gradient(circle at 35% 30%, #ffe08a 0%, #f39a2b 55%, #c2410c 100%);
 }
 
 .act-btn.kind-hu .act-label {
-  font-size: 28px;
+  font-size: calc(var(--mj-act) * 0.5);
 }
 
 .act-btn.kind-gang {
@@ -1590,7 +1805,7 @@ onUnmounted(() => {
 
 .fx-burst {
   color: #ffe29a;
-  font-size: 46px;
+  font-size: calc(46px * var(--mj-fx));
   font-weight: 900;
   line-height: 1;
   white-space: nowrap;
@@ -1625,7 +1840,7 @@ onUnmounted(() => {
 
 .fx-burst.kind-hu {
   color: #fff1b8;
-  font-size: 64px;
+  font-size: calc(64px * var(--mj-fx));
   -webkit-text-stroke-color: #8f1d0e;
   text-shadow: 0 4px 0 #8f1d0e, 0 0 26px rgba(255, 120, 40, 0.95);
 }
@@ -1638,7 +1853,7 @@ onUnmounted(() => {
 
 .fx-burst.kind-flower,
 .fx-burst.kind-auto {
-  font-size: 22px;
+  font-size: calc(22px * var(--mj-fx));
   -webkit-text-stroke-width: 1px;
 }
 
@@ -1720,7 +1935,7 @@ onUnmounted(() => {
 .fx-title {
   position: relative;
   color: #fff1b8;
-  font-size: 76px;
+  font-size: calc(76px * var(--mj-fx));
   font-weight: 900;
   line-height: 1;
   white-space: nowrap;
@@ -1731,7 +1946,7 @@ onUnmounted(() => {
 
 .kind-draw .fx-title {
   color: #e9f1f4;
-  font-size: 58px;
+  font-size: calc(58px * var(--mj-fx));
   -webkit-text-stroke-color: #244653;
   text-shadow: 0 4px 0 #244653, 0 0 24px rgba(160, 200, 220, 0.7);
 }
@@ -1783,7 +1998,280 @@ onUnmounted(() => {
   }
 }
 
+/* ------------------------------------------------ 手机横屏：顶栏浮在桌面上，自己的名牌放到手牌左边 */
+
+.is-landscape .top-bar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  padding: calc(2px + env(safe-area-inset-top)) calc(6px + env(safe-area-inset-right)) 2px
+    calc(6px + env(safe-area-inset-left));
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.45) 0%, transparent 100%);
+}
+
+.is-landscape .icon-btn {
+  width: 28px;
+  height: 28px;
+  font-size: 16px;
+}
+
+.is-landscape .my-area {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 4px calc(10px + env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom))
+    calc(10px + env(safe-area-inset-left));
+}
+
+.is-landscape .my-bar {
+  flex-direction: column;
+  flex-shrink: 0;
+  align-items: flex-start;
+  gap: 4px;
+  width: 170px;
+  min-height: 0;
+  padding-bottom: 2px;
+}
+
+.is-landscape .my-hint {
+  flex: none;
+  width: 100%;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.is-landscape .my-tiles {
+  flex: 1;
+  min-width: 0;
+  padding-top: 10px;
+}
+
+.is-landscape .wait-actions {
+  flex: 1;
+  min-height: 40px;
+}
+
+.is-landscape .actions {
+  right: calc(14px + env(safe-area-inset-right));
+  bottom: calc(100% + 6px);
+}
+
+/* 抢牌时按钮居中，别被挤出屏幕 */
+.is-landscape .actions.claim {
+  right: 50%;
+}
+
+.is-landscape .wait-seat.at-top {
+  top: 34px;
+}
+
+.is-landscape .wait-seat.at-bottom {
+  bottom: 8px;
+}
+
+.is-landscape .wait-seat.at-left {
+  left: calc(10px + env(safe-area-inset-left));
+}
+
+.is-landscape .wait-seat.at-right {
+  right: calc(10px + env(safe-area-inset-right));
+}
+
+/* 横屏的房间号卡片排成两行，矮一点 */
+.is-landscape .wait-center {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 12px;
+  width: min(380px, 52%);
+  padding: 10px 14px;
+}
+
+.is-landscape .room-code {
+  font-size: 26px;
+}
+
+.is-landscape .room-hint {
+  width: 100%;
+}
+
+/* ------------------------------------------------ 平板：整体放大 */
+
+.is-large .top-bar {
+  padding-top: calc(8px + env(safe-area-inset-top));
+  padding-bottom: 8px;
+}
+
+.is-large .icon-btn {
+  width: 40px;
+  height: 40px;
+  font-size: 22px;
+}
+
+.is-large .top-info {
+  font-size: 15px;
+}
+
+.is-large .my-area {
+  padding: 10px 24px calc(14px + env(safe-area-inset-bottom));
+}
+
+.is-large .my-hint {
+  font-size: 14px;
+}
+
+.is-large .pill-btn {
+  height: 48px;
+  min-width: 120px;
+  font-size: 17px;
+}
+
+.is-large .pill-btn.small {
+  height: 38px;
+  min-width: 0;
+  font-size: 15px;
+}
+
+.is-large .wait-center {
+  width: min(340px, 48%);
+  padding: 26px 22px;
+  gap: 10px;
+}
+
+.is-large .room-code {
+  font-size: 44px;
+}
+
+.is-large .room-label,
+.is-large .room-hint,
+.is-large .wait-note {
+  font-size: 14px;
+}
+
+.is-large .chip-btn {
+  padding: 6px 14px;
+  font-size: 14px;
+}
+
+.is-large .wait-seat.at-top {
+  top: 30px;
+}
+
+.is-large .wait-seat.at-bottom {
+  bottom: 30px;
+}
+
+.is-large .wait-seat.at-left {
+  left: 30px;
+}
+
+.is-large .wait-seat.at-right {
+  right: 30px;
+}
+
+.is-large.is-landscape .my-bar {
+  width: 230px;
+}
+
+.is-large.is-landscape .wait-center {
+  flex-direction: column;
+  width: min(340px, 40%);
+}
+
 /* ------------------------------------------------ 弹层 */
+
+/* 横屏和平板上弹层不铺满整个宽度 */
+.mj-sheet {
+  right: 0;
+  left: 0;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.theme-sheet {
+  padding: 4px 18px calc(20px + env(safe-area-inset-bottom));
+}
+
+.theme-label {
+  margin-top: 12px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.theme-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.felt-swatch,
+.back-swatch {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.felt-chip {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+.back-chip {
+  width: 32px;
+  height: 44px;
+  border-radius: 6px;
+  box-shadow: inset 0 -5px 0 rgba(0, 0, 0, 0.2), inset 0 3px 0 rgba(255, 255, 255, 0.55);
+}
+
+.active .felt-chip,
+.active .back-chip {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.swatch-name {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.active .swatch-name {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.theme-preview {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 12px;
+  background: radial-gradient(
+    ellipse at 50% 40%,
+    var(--felt-1, #2c7b58) 0%,
+    var(--felt-2, #1c5c41) 60%,
+    var(--felt-3, #0d3a29) 100%
+  );
+}
+
+.theme-hint {
+  margin-top: 10px;
+  color: var(--ink-3);
+  font-size: 12px;
+  text-align: center;
+}
 
 .inspect,
 .rules {

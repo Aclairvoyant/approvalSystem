@@ -55,21 +55,23 @@ const ariaLabel = computed(() => {
 
 <style scoped>
 .compass {
+  --size: var(--mj-compass, 92px);
+
   position: relative;
-  width: 92px;
-  height: 92px;
+  width: var(--size);
+  height: var(--size);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 18px;
+  border-radius: calc(var(--size) * 0.2);
   background:
     radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.06) 0%, transparent 70%),
-    rgba(5, 24, 17, 0.78);
+    var(--mj-panel, rgba(5, 24, 17, 0.78));
   box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.03), 0 6px 18px rgba(0, 0, 0, 0.35);
 }
 
 .wind {
   position: absolute;
   color: rgba(255, 255, 255, 0.45);
-  font-size: 13px;
+  font-size: calc(var(--size) * 0.14);
   font-weight: 700;
   line-height: 1;
 }
@@ -80,26 +82,26 @@ const ariaLabel = computed(() => {
 }
 
 .wind.at-bottom {
-  bottom: 6px;
+  bottom: 7%;
   left: 50%;
   transform: translateX(-50%);
 }
 
 .wind.at-top {
-  top: 6px;
+  top: 7%;
   left: 50%;
   transform: translateX(-50%) rotate(180deg);
 }
 
 .wind.at-left {
   top: 50%;
-  left: 6px;
+  left: 7%;
   transform: translateY(-50%) rotate(90deg);
 }
 
 .wind.at-right {
   top: 50%;
-  right: 6px;
+  right: 7%;
   transform: translateY(-50%) rotate(270deg);
 }
 
@@ -114,8 +116,8 @@ const ariaLabel = computed(() => {
 
 .turn-bar.at-bottom,
 .turn-bar.at-top {
-  left: 22px;
-  right: 22px;
+  left: 24%;
+  right: 24%;
   height: 3px;
 }
 
@@ -129,8 +131,8 @@ const ariaLabel = computed(() => {
 
 .turn-bar.at-left,
 .turn-bar.at-right {
-  top: 22px;
-  bottom: 22px;
+  top: 24%;
+  bottom: 24%;
   width: 3px;
 }
 
@@ -154,7 +156,7 @@ const ariaLabel = computed(() => {
 
 .core {
   position: absolute;
-  inset: 22px;
+  inset: 24%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -188,7 +190,7 @@ const ariaLabel = computed(() => {
 
 .seconds {
   color: #fff;
-  font-size: 18px;
+  font-size: calc(var(--size) * 0.2);
   font-weight: 700;
   line-height: 1;
 }
@@ -206,7 +208,7 @@ const ariaLabel = computed(() => {
 
 .wall {
   color: #fff;
-  font-size: 16px;
+  font-size: calc(var(--size) * 0.18);
   font-weight: 700;
   line-height: 1;
 }
@@ -214,7 +216,7 @@ const ariaLabel = computed(() => {
 .core-label {
   margin-top: 3px;
   color: rgba(255, 255, 255, 0.55);
-  font-size: 9px;
+  font-size: max(9px, calc(var(--size) * 0.1));
   line-height: 1;
 }
 

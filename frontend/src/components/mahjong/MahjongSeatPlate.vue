@@ -2,12 +2,12 @@
   <button
     type="button"
     class="seat-plate"
-    :class="{ 'is-active': active, compact, empty: !info || info.type === 'EMPTY' }"
+    :class="{ 'is-active': active, compact, large, empty: !info || info.type === 'EMPTY' }"
     :aria-label="ariaLabel"
     @click="emit('inspect')"
   >
     <span class="avatar-ring">
-      <UserAvatar v-if="info?.type === 'HUMAN'" :src="info.avatar" :name="info.name" :size="compact ? 32 : 34" />
+      <UserAvatar v-if="info?.type === 'HUMAN'" :src="info.avatar" :name="info.name" :size="avatarSize" />
       <span v-else-if="info?.type === 'BOT'" class="bot-avatar" aria-hidden="true">电</span>
       <span v-else class="empty-avatar" aria-hidden="true">+</span>
       <span v-if="dealer" class="dealer-badge">庄</span>
@@ -40,6 +40,8 @@ const props = withDefaults(defineProps<{
   flowers?: number
   /** 左右两家竖着排，名字和分数上下放 */
   compact?: boolean
+  /** 平板上放大 */
+  large?: boolean
   showScore?: boolean
   /** 名字覆盖（比如自己显示「你」） */
   name?: string
@@ -52,6 +54,7 @@ const props = withDefaults(defineProps<{
   autoPlay: false,
   flowers: 0,
   compact: false,
+  large: false,
   showScore: true,
   name: ''
 })
@@ -65,6 +68,7 @@ const displayName = computed(() => {
   if (!props.info || props.info.type === 'EMPTY') return '空位'
   return props.info.name || '玩家'
 })
+const avatarSize = computed(() => (props.large ? 44 : props.compact ? 32 : 34))
 const score = computed(() => props.info?.totalScore ?? 0)
 const scoreText = computed(() => (score.value > 0 ? `+${score.value}` : String(score.value)))
 const ariaLabel = computed(() => {
@@ -85,7 +89,7 @@ const ariaLabel = computed(() => {
   padding: 3px 8px 3px 3px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 999px;
-  background: rgba(6, 28, 20, 0.55);
+  background: rgba(0, 0, 0, 0.32);
   color: #fff;
   font-family: var(--font-sans);
   text-align: left;
@@ -228,6 +232,50 @@ const ariaLabel = computed(() => {
 
 .empty .plate-name {
   color: rgba(255, 255, 255, 0.6);
+}
+
+/* 平板 */
+.seat-plate.large {
+  gap: 8px;
+  max-width: 200px;
+  padding: 4px 12px 4px 4px;
+}
+
+.seat-plate.large.compact {
+  gap: 3px;
+  max-width: 84px;
+  padding: 6px 6px 7px;
+}
+
+.large .bot-avatar,
+.large .empty-avatar {
+  width: 44px;
+  height: 44px;
+  font-size: 16px;
+}
+
+.large .plate-name {
+  max-width: 110px;
+  font-size: 15px;
+}
+
+.large.compact .plate-name {
+  max-width: 74px;
+}
+
+.large .plate-score {
+  font-size: 15px;
+}
+
+.large .tag {
+  font-size: 12px;
+}
+
+.large .dealer-badge,
+.large .wind-badge {
+  width: 19px;
+  height: 19px;
+  font-size: 11px;
 }
 
 @media (prefers-reduced-motion: reduce) {

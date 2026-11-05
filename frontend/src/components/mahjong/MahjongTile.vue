@@ -50,10 +50,12 @@ const props = withDefaults(defineProps<{
   /** 不传或 null 表示牌背 */
   tile?: number | null
   /**
-   * xs 牌河，sm 别人的副露 / 亮牌，md 结算，lg 出牌特写，
-   * hand 自己的手牌、meld 自己的副露（宽度分别取父元素的 --hand-tile-w / --meld-tile-w）
+   * 固定尺寸：xs / sm / md（结算、弹层里用）。
+   * 牌桌上的尺寸随横竖屏和平板变化，取牌桌上的 CSS 变量：
+   * river 牌河、seat 别人的副露和亮牌、back 别人立着的暗牌、lg 出牌特写、
+   * hand 自己的手牌（--hand-tile-w）、meld 自己的副露。
    */
-  size?: 'xs' | 'sm' | 'md' | 'lg' | 'hand' | 'meld'
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'river' | 'seat' | 'back' | 'hand' | 'meld'
   /** 顺时针旋转角度：左右两家的牌横着放 */
   rotate?: 0 | 90 | 180 | 270
   /** 立着的牌（别人手里的暗牌），比平放的牌更窄更高 */
@@ -102,9 +104,10 @@ const label = computed(() => {
   --tile-face: #fffcf3;
   --tile-face-2: #f1e9d4;
   --tile-rule: #d6cbb0;
-  --tile-jade: #2f8c65;
-  --tile-jade-dark: #1f6248;
-  --tile-jade-light: #55b98d;
+  /* 牌背颜色可换主题，由牌桌根元素的 --mj-back* 变量提供 */
+  --tile-jade: var(--mj-back, #2f8c65);
+  --tile-jade-dark: var(--mj-back-dark, #1f6248);
+  --tile-jade-light: var(--mj-back-light, #55b98d);
   --ink-wan: #b42a1f;
   --ink-tiao: #1c6b44;
   --ink-tong: #1f4c8a;
@@ -151,7 +154,19 @@ button.mj-slot:disabled {
 }
 
 .mj-size-lg {
-  --tile-w: 46px;
+  --tile-w: var(--mj-lg-w, 46px);
+}
+
+.mj-size-river {
+  --tile-w: var(--mj-river-w, 17px);
+}
+
+.mj-size-seat {
+  --tile-w: var(--mj-seat-w, 17px);
+}
+
+.mj-size-back {
+  --tile-w: var(--mj-back-w, 17px);
 }
 
 .mj-size-hand {
@@ -159,7 +174,7 @@ button.mj-slot:disabled {
 }
 
 .mj-size-meld {
-  --tile-w: var(--meld-tile-w, 20px);
+  --tile-w: var(--mj-meld-w, 19px);
 }
 
 /* 立着的牌：窄而高，看到的是牌背 */
@@ -294,8 +309,10 @@ button.mj-slot:disabled {
   line-height: 1;
 }
 
-/* 最小号的牌放不下角标，只留内描边 */
-.mj-size-xs .mj-wild {
+/* 小号的牌放不下角标，只留内描边 */
+.mj-size-xs .mj-wild,
+.mj-size-river .mj-wild,
+.mj-size-seat .mj-wild {
   display: none;
 }
 
