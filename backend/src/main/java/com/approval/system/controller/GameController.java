@@ -1,5 +1,6 @@
 package com.approval.system.controller;
 
+import com.approval.system.common.exception.BusinessException;
 import com.approval.system.common.response.ApiResponse;
 import com.approval.system.dto.GameCreateRequest;
 import com.approval.system.dto.GameJoinRequest;
@@ -139,6 +140,8 @@ public class GameController {
             @PathVariable Long gameId) {
         log.info("强制结束游戏: userId={}, gameId={}", userId, gameId);
         gameService.forceEndGame(gameId, userId);
+        // 通知房间里的对方，否则对方页面一直停在"游戏进行中"
+        messagingTemplate.convertAndSend("/topic/game/" + gameId, GameMessage.gameEnded(gameId, null, null));
         return ApiResponse.success();
     }
 
@@ -164,7 +167,7 @@ public class GameController {
             @PathVariable Long gameId) {
         // 验证玩家权限
         if (!gameService.validateGamePlayer(gameId, userId)) {
-            return ApiResponse.fail("您不是这场游戏的参与者");
+            throw BusinessException.forbidden("您不是这场游戏的参与者");
         }
         gameService.updateLastMoveTime(gameId);
         return ApiResponse.success();

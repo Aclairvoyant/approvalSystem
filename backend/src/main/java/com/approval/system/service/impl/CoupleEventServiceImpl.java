@@ -1,5 +1,7 @@
 package com.approval.system.service.impl;
 
+import com.approval.system.common.exception.BusinessException;
+import com.approval.system.common.enums.RepeatTypeEnum;
 import com.approval.system.entity.CoupleEvent;
 import com.approval.system.mapper.CoupleEventMapper;
 import com.approval.system.service.ICoupleEventService;
@@ -33,7 +35,7 @@ public class CoupleEventServiceImpl extends ServiceImpl<CoupleEventMapper, Coupl
                 .eventType(defaultNumber(event.getEventType(), 1))
                 .title(event.getTitle().trim())
                 .eventDate(event.getEventDate())
-                .repeatType(defaultNumber(event.getRepeatType(), 1))
+                .repeatType(defaultNumber(event.getRepeatType(), RepeatTypeEnum.YEARLY.getCode()))
                 .remindDaysBefore(defaultNumber(event.getRemindDaysBefore(), 1))
                 .note(event.getNote())
                 .createdAt(now)
@@ -77,12 +79,21 @@ public class CoupleEventServiceImpl extends ServiceImpl<CoupleEventMapper, Coupl
 
     @Override
     public List<CoupleEvent> listUpcomingEvents(Long userId, int days) {
+        return upcomingEvents(userId, days)
+                .limit(5)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public long countUpcomingEvents(Long userId, int days) {
+        return upcomingEvents(userId, days).count();
+    }
+
+    private java.util.stream.Stream<CoupleEvent> upcomingEvents(Long userId, int days) {
         LocalDate today = LocalDate.now();
         LocalDate until = LocalDate.now().plusDays(days);
         return listVisibleEvents(userId).stream()
-                .filter(event -> !nextOccurrence(event).isBefore(today) && !nextOccurrence(event).isAfter(until))
-                .limit(5)
-                .collect(Collectors.toList());
+                .filter(event -> !nextOccurrence(event).isBefore(today) && !nextOccurrence(event).isAfter(until));
     }
 
     @Override
@@ -109,7 +120,7 @@ public class CoupleEventServiceImpl extends ServiceImpl<CoupleEventMapper, Coupl
         queryWrapper.eq("id", eventId);
         CoupleEvent event = this.getOne(queryWrapper);
         if (event == null) {
-            throw new RuntimeException("No permission or event not found");
+            throw BusinessException.notFound("纪念日不存在或无权访问");
         }
         return event;
     }
@@ -120,14 +131,14 @@ public class CoupleEventServiceImpl extends ServiceImpl<CoupleEventMapper, Coupl
             return null;
         }
         if (!userRelationService.isRelated(userId, partnerId)) {
-            throw new RuntimeException("Partner relationship is required");
+            throw BusinessException.forbidden("只能关联已互为对象的用户");
         }
         return partnerId;
     }
 
     private LocalDate nextOccurrence(CoupleEvent event) {
         LocalDate date = event.getEventDate();
-        if (event.getRepeatType() == null || event.getRepeatType() != 1) {
+        if (!RepeatTypeEnum.YEARLY.is(event.getRepeatType())) {
             return date;
         }
         LocalDate next = date.withYear(LocalDate.now().getYear());
@@ -151,10 +162,10 @@ public class CoupleEventServiceImpl extends ServiceImpl<CoupleEventMapper, Coupl
 
     private void validateEvent(CoupleEvent event) {
         if (event.getTitle() == null || event.getTitle().trim().isEmpty()) {
-            throw new RuntimeException("Title is required");
+            throw BusinessException.badRequest("标题不能为空");
         }
         if (event.getEventDate() == null) {
-            throw new RuntimeException("Event date is required");
+            throw BusinessException.badRequest("请选择日期");
         }
     }
 }

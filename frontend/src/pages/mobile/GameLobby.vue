@@ -1,9 +1,9 @@
 <template>
   <div class="game-lobby">
-    <div class="header-section">
-      <div class="title">情侣游戏</div>
-      <div class="subtitle">选择游戏，创建房间或输入房间号加入</div>
-    </div>
+    <header class="header-section">
+      <h1 class="title">游戏</h1>
+      <p class="subtitle">{{ subtitle }}</p>
+    </header>
 
     <div class="game-selector" role="tablist" aria-label="游戏类型">
       <button
@@ -14,8 +14,7 @@
         :class="{ active: selectedGame === item.value }"
         @click="selectGame(item.value)"
       >
-        <van-icon :name="item.icon" />
-        <span>{{ item.label }}</span>
+        {{ item.label }}
       </button>
     </div>
 
@@ -29,7 +28,7 @@
           @click="showCreateDialog = true"
         >
           <template #icon>
-            <van-icon name="add-o" size="24" color="#0f766e" class="cell-icon" />
+            <van-icon name="add-o" size="22" class="cell-icon" />
           </template>
         </van-cell>
         <van-cell
@@ -40,7 +39,7 @@
           @click="showJoinDialog = true"
         >
           <template #icon>
-            <van-icon name="scan" size="24" color="#2563eb" class="cell-icon" />
+            <van-icon name="enlarge" size="22" class="cell-icon" />
           </template>
         </van-cell>
         <van-cell
@@ -52,7 +51,7 @@
           @click="router.push('/mobile/game/tasks')"
         >
           <template #icon>
-            <van-icon name="todo-list-o" size="24" color="#f59e0b" class="cell-icon" />
+            <van-icon name="todo-list-o" size="22" class="cell-icon" />
           </template>
         </van-cell>
       </van-cell-group>
@@ -69,33 +68,46 @@
       </div>
 
       <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
-        <div v-if="displayGames.length === 0 && !loading" class="empty-state">
-          <van-empty description="暂无游戏记录" />
-        </div>
+        <van-empty v-if="displayGames.length === 0 && !loading" class="m-empty" description="还没有对局记录" />
 
         <div
           v-for="game in displayGames"
           :key="`${selectedGame}-${game.id}`"
-          class="game-card"
+          class="m-card game-card"
           @click="goToGame(game)"
         >
           <div class="game-header">
-            <div class="tag-row">
-              <van-tag :type="getStatusType(game.gameStatus)" size="medium">
-                {{ getStatusText(game.gameStatus) }}
-              </van-tag>
-              <van-tag plain size="medium">{{ getGameTypeLabel(game) }}</van-tag>
-            </div>
-            <span class="game-code">房间号 {{ game.gameCode }}</span>
+            <span class="game-status" :class="`is-${getStatusTone(game.gameStatus)}`">{{ getStatusText(game) }}</span>
+            <span class="game-code tabular">房间号 {{ game.gameCode }}</span>
           </div>
+          <template v-if="isMahjongRoom(game)">
+            <p class="mj-summary">
+              {{ game.modeName }} · {{ game.seatCount }} 人桌<template v-if="game.roundNo"> · 第 {{ game.roundNo }} 局</template>
+              <template v-if="isMahjongInvite(game)"> · 邀请你加入</template>
+            </p>
+            <div class="mj-players">
+              <div v-for="seat in game.seats" :key="seat.seatIndex" class="mj-player">
+                <UserAvatar v-if="seat.type === 'HUMAN'" :src="seat.avatar" :name="seat.name" :size="32" />
+                <span v-else class="mj-seat-mark" :class="{ bot: seat.type === 'BOT' }">{{ seat.type === 'BOT' ? '电' : '' }}</span>
+                <span class="name">{{ seat.type === 'EMPTY' ? '空位' : seat.name }}</span>
+                <span v-if="game.roundNo" class="score tabular">{{ signedScore(seat.totalScore ?? 0) }}</span>
+              </div>
+            </div>
+            <div class="game-footer">
+              <span class="time">{{ formatTime(game.createdAt) }}</span>
+              <span v-if="game.capPoints" class="winner">封顶 {{ game.capPoints }}</span>
+              <span v-else class="winner">不封顶</span>
+            </div>
+          </template>
+          <template v-else>
           <div class="game-players">
             <div class="player">
-              <van-image round width="40" height="40" :src="getFirstAvatar(game)" />
+              <UserAvatar :src="getFirstAvatar(game)" :name="getFirstPlayerName(game)" :size="36" />
               <span class="name">{{ getFirstPlayerName(game) }}</span>
             </div>
             <span class="vs">VS</span>
             <div class="player">
-              <van-image round width="40" height="40" :src="getSecondAvatar(game)" />
+              <UserAvatar :src="getSecondAvatar(game)" :name="getSecondPlayerName(game)" :size="36" />
               <span class="name">{{ getSecondPlayerName(game) }}</span>
             </div>
           </div>
@@ -103,6 +115,7 @@
             <span class="time">{{ formatTime(game.createdAt) }}</span>
             <span v-if="game.winnerId" class="winner">{{ getWinnerText(game) }}</span>
           </div>
+          </template>
         </div>
 
         <van-loading v-if="loading" class="list-loading" size="24" />
@@ -113,9 +126,36 @@
       v-model:show="showCreateDialog"
       :title="`创建${selectedGameLabel}房间`"
       show-cancel-button
+      confirm-button-text="创建"
       :before-close="handleCreateGame"
     >
-      <div class="dialog-content">
+      <div v-if="selectedGame === 'mahjong'" class="dialog-content mj-create">
+        <p class="dialog-tip">房间号发给谁都能加入，空位可以设成电脑</p>
+        <div class="mj-field">
+          <span class="mj-field-label">玩法</span>
+          <van-radio-group v-model="mahjongMode" direction="horizontal">
+            <van-radio v-for="item in MAHJONG_MODE_OPTIONS" :key="item.value" :name="item.value">{{ item.label }}</van-radio>
+          </van-radio-group>
+        </div>
+        <p class="mj-field-hint">{{ mahjongModeHint }}</p>
+        <div class="mj-field">
+          <span class="mj-field-label">座位</span>
+          <van-radio-group v-model="mahjongSeats" direction="horizontal">
+            <van-radio v-for="count in [2, 3, 4]" :key="count" :name="count">{{ count }} 人</van-radio>
+          </van-radio-group>
+        </div>
+        <div class="mj-field">
+          <span class="mj-field-label">封顶</span>
+          <van-radio-group v-model="mahjongCap" direction="horizontal" class="mj-cap">
+            <van-radio v-for="item in MAHJONG_CAP_OPTIONS" :key="item.value" :name="item.value">{{ item.label }}</van-radio>
+          </van-radio-group>
+        </div>
+        <p class="mj-field-hint">每个付分的人每局最多付这么多分</p>
+        <van-checkbox v-if="partnerList.length" v-model="mahjongInvitePartner" class="mj-invite" shape="square">
+          同时邀请{{ partnerList[0].name }}
+        </van-checkbox>
+      </div>
+      <div v-else class="dialog-content">
         <p class="dialog-tip">选择你的对象一起玩{{ selectedGameLabel }}</p>
         <van-field
           v-model="selectedPartnerName"
@@ -147,7 +187,7 @@
           label="房间号"
           placeholder="请输入6位房间号"
           maxlength="6"
-          type="number"
+          type="digit"
         />
       </div>
     </van-dialog>
@@ -158,14 +198,25 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { closeToast, showLoadingToast, showToast } from 'vant'
-import dayjs from 'dayjs'
 import { relationAPI, type GameInfo } from '@/services/api'
+import { formatMonthDayTime } from '@/utils/format'
+import UserAvatar from '@/components/UserAvatar.vue'
 import { GameStatus, useGameStore } from '@/store/modules/game'
 import { useGobangStore } from '@/store/modules/gobang'
+import { useMahjongStore } from '@/store/modules/mahjong'
 import { GobangGameStatus, type GobangGame } from '@/services/gobangApi'
+import {
+  DEFAULT_CAP_POINTS,
+  MAHJONG_CAP_OPTIONS,
+  MAHJONG_MODE_OPTIONS,
+  MahjongRoomStatus,
+  type MahjongMode,
+  type MahjongRoom
+} from '@/services/mahjongApi'
+import { useUserStore } from '@/store/modules/user'
 
-type GameKind = 'flight' | 'gobang'
-type LobbyGame = GameInfo | GobangGame
+type GameKind = 'flight' | 'gobang' | 'mahjong'
+type LobbyGame = GameInfo | GobangGame | MahjongRoom
 
 interface PartnerOption {
   id: number
@@ -175,17 +226,32 @@ interface PartnerOption {
 const router = useRouter()
 const gameStore = useGameStore()
 const gobangStore = useGobangStore()
-const defaultAvatar = 'https://fastly.jsdelivr.net/npm/@vant/assets/cat.jpeg'
+const mahjongStore = useMahjongStore()
+const userStore = useUserStore()
 
-const gameOptions: Array<{ label: string; value: GameKind; icon: string }> = [
-  { label: '飞行棋', value: 'flight', icon: 'guide-o' },
-  { label: '五子棋', value: 'gobang', icon: 'cluster-o' }
+const gameOptions: Array<{ label: string; value: GameKind }> = [
+  { label: '飞行棋', value: 'flight' },
+  { label: '五子棋', value: 'gobang' },
+  { label: '上海麻将', value: 'mahjong' }
 ]
+
+const GAME_LABELS: Record<GameKind, string> = {
+  flight: '飞行棋',
+  gobang: '五子棋',
+  mahjong: '上海麻将'
+}
 
 const selectedGame = ref<GameKind>('flight')
 const activeTab = ref(2)
 const flightGames = ref<GameInfo[]>([])
 const gobangGames = ref<GobangGame[]>([])
+const mahjongGames = ref<MahjongRoom[]>([])
+
+const mahjongMode = ref<MahjongMode>('QIAOMA')
+const mahjongSeats = ref(4)
+const mahjongCap = ref(DEFAULT_CAP_POINTS)
+const mahjongInvitePartner = ref(false)
+const mahjongModeHint = computed(() => MAHJONG_MODE_OPTIONS.find(item => item.value === mahjongMode.value)?.hint ?? '')
 const loading = ref(false)
 const refreshing = ref(false)
 
@@ -198,15 +264,23 @@ const partnerList = ref<PartnerOption[]>([])
 const showJoinDialog = ref(false)
 const joinGameCode = ref('')
 
-const selectedGameLabel = computed(() => selectedGame.value === 'flight' ? '飞行棋' : '五子棋')
+const selectedGameLabel = computed(() => GAME_LABELS[selectedGame.value])
+const subtitle = computed(() => {
+  return selectedGame.value === 'mahjong'
+    ? '开房后把房间号发给朋友，谁都能加入，空位可以设成电脑'
+    : '和对象一起玩，开房间后把房间号发给对方'
+})
 const createLabel = computed(() => {
+  if (selectedGame.value === 'mahjong') return '百搭或敲麻，2-4 人，电脑可以补位'
   return selectedGame.value === 'flight' ? '邀请对象一起玩飞行棋' : '邀请对象执黑白对弈'
 })
 const joinLabel = computed(() => {
+  if (selectedGame.value === 'mahjong') return '输入麻将房间号，不用互为对象'
   return selectedGame.value === 'flight' ? '输入飞行棋房间号' : '输入五子棋房间号'
 })
 const historyTitle = computed(() => `${selectedGameLabel.value}记录`)
 const displayGames = computed<LobbyGame[]>(() => {
+  if (selectedGame.value === 'mahjong') return mahjongGames.value
   return selectedGame.value === 'flight' ? flightGames.value : gobangGames.value
 })
 
@@ -227,26 +301,33 @@ function isGobangGame(game: LobbyGame): game is GobangGame {
   return 'blackPlayerId' in game
 }
 
-function getStatusType(status: number): 'primary' | 'success' | 'warning' | 'danger' {
-  switch (status) {
-    case GameStatus.WAITING:
-    case GobangGameStatus.WAITING:
-      return 'warning'
-    case GameStatus.PLAYING:
-    case GobangGameStatus.PLAYING:
-      return 'primary'
-    case GameStatus.FINISHED:
-    case GobangGameStatus.FINISHED:
-      return 'success'
-    case GameStatus.CANCELLED:
-    case GobangGameStatus.CANCELLED:
-      return 'danger'
-    default:
-      return 'primary'
-  }
+function isMahjongRoom(game: LobbyGame): game is MahjongRoom {
+  return 'seatCount' in game && 'modeName' in game
 }
 
-function getStatusText(status: number): string {
+function isMahjongInvite(game: MahjongRoom): boolean {
+  return game.gameStatus === MahjongRoomStatus.WAITING &&
+    game.invitedUserId === userStore.userId &&
+    !game.seats.some(seat => seat.userId === userStore.userId)
+}
+
+function signedScore(value: number): string {
+  return value > 0 ? `+${value}` : String(value)
+}
+
+// 两种游戏的状态码一致：1 等待、2 进行中、3 结束、4 取消
+function getStatusTone(status: number): 'active' | 'done' {
+  return status === GameStatus.WAITING || status === GameStatus.PLAYING ? 'active' : 'done'
+}
+
+function getStatusText(game: LobbyGame): string {
+  const status = game.gameStatus
+  if (isMahjongRoom(game)) {
+    if (status === MahjongRoomStatus.WAITING) return '等待开局'
+    if (status === MahjongRoomStatus.PLAYING) return '对局中'
+    if (status === MahjongRoomStatus.FINISHED) return '本局结束'
+    if (status === MahjongRoomStatus.CANCELLED) return '已取消'
+  }
   switch (status) {
     case GameStatus.WAITING:
     case GobangGameStatus.WAITING:
@@ -265,35 +346,29 @@ function getStatusText(status: number): string {
   }
 }
 
-function getGameTypeLabel(game: LobbyGame): string {
-  return isGobangGame(game) ? '五子棋' : '飞行棋'
-}
-
-function getFirstPlayerName(game: LobbyGame): string {
+function getFirstPlayerName(game: GameInfo | GobangGame): string {
   return isGobangGame(game) ? (game.blackPlayerName || '黑棋') : (game.player1Name || '玩家1')
 }
 
-function getSecondPlayerName(game: LobbyGame): string {
+function getSecondPlayerName(game: GameInfo | GobangGame): string {
   if (isGobangGame(game)) {
     return game.whitePlayerName || game.invitedPlayerName || '等待中'
   }
   return game.player2Name || '等待中'
 }
 
-function getFirstAvatar(game: LobbyGame): string {
-  return isGobangGame(game)
-    ? (game.blackPlayerAvatar || defaultAvatar)
-    : (game.player1Avatar || defaultAvatar)
+function getFirstAvatar(game: GameInfo | GobangGame): string {
+  return (isGobangGame(game) ? game.blackPlayerAvatar : game.player1Avatar) || ''
 }
 
-function getSecondAvatar(game: LobbyGame): string {
+function getSecondAvatar(game: GameInfo | GobangGame): string {
   if (isGobangGame(game)) {
-    return game.whitePlayerAvatar || game.invitedPlayerAvatar || defaultAvatar
+    return game.whitePlayerAvatar || game.invitedPlayerAvatar || ''
   }
-  return game.player2Avatar || defaultAvatar
+  return game.player2Avatar || ''
 }
 
-function getWinnerText(game: LobbyGame): string {
+function getWinnerText(game: GameInfo | GobangGame): string {
   if (!game.winnerId) return ''
 
   if (isGobangGame(game)) {
@@ -308,24 +383,30 @@ function getWinnerText(game: LobbyGame): string {
 }
 
 function formatTime(time: string): string {
-  return dayjs(time).format('MM-DD HH:mm')
+  return formatMonthDayTime(time)
 }
 
+let loadRequest = 0
 async function loadGames(): Promise<void> {
+  // 快速切换游戏或筛选时，只采用最后一次请求的结果
+  const id = ++loadRequest
   loading.value = true
   try {
     const status = activeTab.value === 0 ? undefined : activeTab.value
-    if (selectedGame.value === 'flight') {
+    if (selectedGame.value === 'mahjong') {
+      await mahjongStore.fetchHistory(status)
+      if (id === loadRequest) mahjongGames.value = mahjongStore.history
+    } else if (selectedGame.value === 'flight') {
       await gameStore.fetchGameHistory(status)
-      flightGames.value = gameStore.gameHistory
+      if (id === loadRequest) flightGames.value = gameStore.gameHistory
     } else {
       await gobangStore.fetchGameHistory(status)
-      gobangGames.value = gobangStore.gameHistory
+      if (id === loadRequest) gobangGames.value = gobangStore.gameHistory
     }
   } catch (error: any) {
-    showToast({ type: 'fail', message: error.message || '加载失败' })
+    if (id === loadRequest) showToast({ type: 'fail', message: error.message || '加载失败' })
   } finally {
-    loading.value = false
+    if (id === loadRequest) loading.value = false
   }
 }
 
@@ -342,6 +423,12 @@ async function loadPartners(): Promise<void> {
       id: relation.otherUserId,
       name: relation.otherUserName || relation.otherUserUsername || '对象'
     }))
+    // 每个人只能有一个对象，直接替用户选好
+    if (partnerList.value.length === 1) {
+      selectedPartnerId.value = partnerList.value[0].id
+      selectedPartnerName.value = partnerList.value[0].name
+    }
+    mahjongInvitePartner.value = partnerList.value.length > 0
   } catch {
     showToast({ type: 'fail', message: '对象列表加载失败' })
   }
@@ -358,6 +445,8 @@ function onPartnerConfirm(value: { selectedOptions: Array<{ text: string; value:
 
 async function handleCreateGame(action: string): Promise<boolean> {
   if (action !== 'confirm') return true
+
+  if (selectedGame.value === 'mahjong') return createMahjongRoom()
 
   if (!selectedPartnerId.value) {
     showToast({ type: 'fail', message: '请选择对象' })
@@ -377,9 +466,35 @@ async function handleCreateGame(action: string): Promise<boolean> {
     return true
   } catch (error: any) {
     closeToast()
-    showToast({ type: 'fail', message: error.response?.data?.message || error.message || '创建失败' })
+    showToast({ type: 'fail', message: error.message || '创建失败' })
     return false
   }
+}
+
+async function createMahjongRoom(): Promise<boolean> {
+  showLoadingToast({ message: '创建中...', forbidClick: true })
+  try {
+    const room = await mahjongStore.createRoom({
+      mode: mahjongMode.value,
+      seatCount: mahjongSeats.value,
+      capPoints: mahjongCap.value,
+      inviteUserId: mahjongInvitePartner.value && partnerList.value.length ? partnerList.value[0].id : undefined
+    })
+    closeToast()
+    showToast({ type: 'success', message: '房间创建成功' })
+    router.push(`/mobile/mahjong/room/${room.id}`)
+    return true
+  } catch (error: any) {
+    closeToast()
+    showToast({ type: 'fail', message: error.message || '创建失败' })
+    return false
+  }
+}
+
+async function joinByCode(code: string): Promise<string> {
+  if (selectedGame.value === 'mahjong') return `/mobile/mahjong/room/${(await mahjongStore.joinRoom(code)).id}`
+  if (selectedGame.value === 'flight') return `/mobile/game/room/${(await gameStore.joinGame(code)).id}`
+  return `/mobile/gobang/room/${(await gobangStore.joinGame(code)).id}`
 }
 
 async function handleJoinGame(action: string): Promise<boolean> {
@@ -392,9 +507,7 @@ async function handleJoinGame(action: string): Promise<boolean> {
 
   showLoadingToast({ message: '加入中...', forbidClick: true })
   try {
-    const targetRoute = selectedGame.value === 'flight'
-      ? `/mobile/game/room/${(await gameStore.joinGame(joinGameCode.value)).id}`
-      : `/mobile/gobang/room/${(await gobangStore.joinGame(joinGameCode.value)).id}`
+    const targetRoute = await joinByCode(joinGameCode.value)
 
     closeToast()
     showToast({ type: 'success', message: '加入成功' })
@@ -403,17 +516,22 @@ async function handleJoinGame(action: string): Promise<boolean> {
     return true
   } catch (error: any) {
     closeToast()
-    showToast({ type: 'fail', message: error.response?.data?.message || error.message || '加入失败' })
+    showToast({ type: 'fail', message: error.message || '加入失败' })
     return false
   }
 }
 
 function resetCreateForm(): void {
+  if (partnerList.value.length === 1) return
   selectedPartnerId.value = null
   selectedPartnerName.value = ''
 }
 
 function goToGame(game: LobbyGame): void {
+  if (isMahjongRoom(game)) {
+    router.push(`/mobile/mahjong/room/${game.id}`)
+    return
+  }
   if (isGobangGame(game)) {
     router.push(`/mobile/gobang/room/${game.id}`)
     return
@@ -427,177 +545,266 @@ onMounted(() => {
 })
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .game-lobby {
-  min-height: 100vh;
-  padding-bottom: 60px;
-  background-color: #f7f8fa;
+  min-height: 100%;
+  padding: max(20px, env(safe-area-inset-top)) 12px 24px;
+  background: var(--bg);
 }
 
 .header-section {
-  padding: 34px 20px 46px;
-  text-align: center;
-  color: #fff;
-  background: linear-gradient(135deg, #0f766e 0%, #2563eb 100%);
+  padding: 0 4px 16px;
+}
 
-  .title {
-    margin-bottom: 8px;
-    font-size: 28px;
-    font-weight: 700;
-  }
+.title {
+  color: var(--ink);
+  font-size: 24px;
+  line-height: 1.25;
+}
 
-  .subtitle {
-    font-size: 14px;
-    opacity: 0.92;
-  }
+.subtitle {
+  margin-top: 4px;
+  color: var(--ink-2);
+  font-size: 13px;
 }
 
 .game-selector {
-  margin: -24px 12px 12px;
-  padding: 4px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
   gap: 4px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+  padding: 3px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
 }
 
 .game-option {
-  min-width: 0;
-  height: 44px;
+  flex: 1;
+  padding: 7px 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 5px;
   background: transparent;
-  color: #4b5563;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
+  color: var(--ink-2);
   font-size: 14px;
+  cursor: pointer;
+}
 
-  &.active {
-    color: #fff;
-    background: #0f766e;
-    font-weight: 600;
-  }
+.game-option.active {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 .action-section {
-  padding: 0 12px;
+  margin-top: 12px;
+}
 
-  .cell-icon {
-    margin-right: 12px;
-  }
+.action-section :deep(.van-cell-group--inset) {
+  margin: 0;
+  border-radius: var(--radius);
+}
+
+.cell-icon {
+  margin-right: 12px;
+  color: var(--ink-2);
 }
 
 .history-section {
-  padding: 16px 12px;
+  margin-top: 20px;
 }
 
 .section-title {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
-
-  > span {
-    font-size: 16px;
-    font-weight: 600;
-    color: #111827;
-  }
-
-  :deep(.van-tabs) {
-    width: auto;
-  }
-
-  :deep(.van-tabs__nav) {
-    background: transparent;
-  }
+  justify-content: space-between;
+  padding: 0 4px 6px;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
 }
 
-.empty-state {
-  padding: 34px 0;
+.section-title :deep(.van-tabs__nav) {
+  background: transparent;
 }
 
 .game-card {
-  margin-bottom: 12px;
-  padding: 14px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 8px rgba(15, 23, 42, 0.06);
+  padding: 14px 16px;
+  cursor: pointer;
 }
 
-.game-header,
-.game-footer {
+.game-card + .game-card {
+  margin-top: 8px;
+}
+
+.game-header {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
-  gap: 10px;
 }
 
-.tag-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.game-status {
+  font-size: 13px;
+  font-weight: 600;
 }
 
-.game-code,
-.time {
-  color: #6b7280;
+.game-status.is-active {
+  color: var(--accent);
+}
+
+.game-status.is-done {
+  color: var(--ink-3);
+}
+
+.game-code {
+  color: var(--ink-3);
   font-size: 12px;
 }
 
 .game-players {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 20px;
-  margin: 16px 0;
+  justify-content: space-around;
+  margin: 12px 0 10px;
 }
 
 .player {
-  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
+  width: 40%;
+}
 
-  .name {
-    max-width: 112px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: #323233;
-    font-size: 14px;
-  }
+.player .name {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .vs {
-  color: #f59e0b;
-  font-size: 18px;
-  font-weight: 700;
+  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.game-footer {
+  display: flex;
+  justify-content: space-between;
+  color: var(--ink-3);
+  font-size: 12px;
 }
 
 .winner {
-  color: #0f766e;
-  font-size: 12px;
+  color: var(--ink-2);
 }
 
 .list-loading {
   display: flex;
   justify-content: center;
-  padding: 18px 0;
+  padding: 20px 0;
 }
 
 .dialog-content {
-  padding: 16px;
+  padding: 8px 0 12px;
+}
 
-  .dialog-tip {
-    margin: 0 0 16px;
-    text-align: center;
-    color: #6b7280;
-    font-size: 14px;
-  }
+.dialog-tip {
+  padding: 0 24px 8px;
+  color: var(--ink-2);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* 麻将记录卡片：最多 4 个座位 */
+.mj-summary {
+  margin-top: 8px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.mj-players {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.mj-player {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.mj-player .name {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mj-player .score {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.mj-seat-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px dashed var(--rule-strong);
+  border-radius: 50%;
+}
+
+.mj-seat-mark.bot {
+  border: 0;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.mj-create {
+  padding: 8px 20px 12px;
+}
+
+.mj-create .dialog-tip {
+  padding: 0 0 10px;
+}
+
+.mj-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.mj-field-label {
+  flex-shrink: 0;
+  width: 32px;
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.mj-field :deep(.van-radio-group--horizontal) {
+  row-gap: 8px;
+}
+
+.mj-field-hint {
+  margin: -2px 0 4px 44px;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.mj-invite {
+  margin-top: 8px;
+  font-size: 14px;
 }
 </style>

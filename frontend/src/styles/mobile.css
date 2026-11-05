@@ -1,0 +1,140 @@
+/* 移动端共用的页面骨架，所有颜色、圆角都来自 tokens.css */
+
+.m-page {
+  min-height: 100%;
+  padding: 12px 12px 24px;
+  background: var(--bg);
+}
+
+.m-page--flush {
+  padding: 0 0 24px;
+}
+
+.m-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+}
+
+.m-card + .m-card {
+  margin-top: 10px;
+}
+
+.m-card--pad {
+  padding: 14px 16px;
+}
+
+.m-section {
+  margin-top: 20px;
+}
+
+.m-section:first-child {
+  margin-top: 0;
+}
+
+.m-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 4px 8px;
+}
+
+.m-section-title {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.m-section-link {
+  color: var(--accent);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.m-title {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.m-body {
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.m-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.m-meta .van-icon {
+  margin-right: 3px;
+  vertical-align: -1px;
+}
+
+.m-empty {
+  padding: 48px 0;
+}
+
+.m-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.m-actions > .van-button {
+  flex: 1;
+}
+
+/* 底部弹层里的表单 */
+.m-sheet {
+  padding: 4px 0 calc(16px + env(safe-area-inset-bottom));
+}
+
+.m-sheet-title {
+  padding: 16px 16px 8px;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.m-sheet-footer {
+  display: flex;
+  gap: 10px;
+  padding: 16px 16px 0;
+}
+
+.m-sheet-footer > .van-button {
+  flex: 1;
+}
+
+/* 列表左滑按钮 */
+.m-swipe-btn {
+  height: 100%;
+}
+
+/* 顶部导航统一样式 */
+.van-nav-bar .van-nav-bar__title {
+  font-weight: 600;
+}
+
+/* 提示条：中性底色，文字说明状态，不靠颜色 */
+.m-note {
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.m-note b {
+  color: var(--ink);
+  font-weight: 600;
+}

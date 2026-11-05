@@ -1,5 +1,6 @@
 package com.approval.system.service.impl;
 
+import com.approval.system.common.exception.BusinessException;
 import com.approval.system.entity.ApplicationTemplate;
 import com.approval.system.mapper.ApplicationTemplateMapper;
 import com.approval.system.service.IApplicationTemplateService;
@@ -90,7 +91,7 @@ public class ApplicationTemplateServiceImpl extends ServiceImpl<ApplicationTempl
                 .or(shared -> shared.eq("shared", true).eq("partner_id", userId)));
         ApplicationTemplate template = this.getOne(queryWrapper);
         if (template == null) {
-            throw new RuntimeException("No permission or template not found");
+            throw BusinessException.notFound("模板不存在或无权访问");
         }
         return template;
     }
@@ -101,7 +102,7 @@ public class ApplicationTemplateServiceImpl extends ServiceImpl<ApplicationTempl
         queryWrapper.eq("creator_id", userId);
         ApplicationTemplate template = this.getOne(queryWrapper);
         if (template == null) {
-            throw new RuntimeException("Only the creator can edit this template");
+            throw BusinessException.forbidden("只有模板创建者可以修改此模板");
         }
         return template;
     }
@@ -112,17 +113,17 @@ public class ApplicationTemplateServiceImpl extends ServiceImpl<ApplicationTempl
             return null;
         }
         if (!userRelationService.isRelated(userId, partnerId)) {
-            throw new RuntimeException("Partner relationship is required");
+            throw BusinessException.forbidden("只能关联已互为对象的用户");
         }
         return partnerId;
     }
 
     private void validateTemplate(ApplicationTemplate template) {
         if (template.getTitle() == null || template.getTitle().trim().isEmpty()) {
-            throw new RuntimeException("Title is required");
+            throw BusinessException.badRequest("标题不能为空");
         }
         if (template.getDescription() == null || template.getDescription().trim().isEmpty()) {
-            throw new RuntimeException("Description is required");
+            throw BusinessException.badRequest("说明不能为空");
         }
     }
 }

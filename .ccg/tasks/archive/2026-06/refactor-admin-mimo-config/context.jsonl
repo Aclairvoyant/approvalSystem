@@ -1,0 +1,11 @@
+{"path":"frontend/src/layouts/AdminLayout.vue","reason":"Admin shell, navigation, header, and overall visual system"}
+{"path":"frontend/src/pages/admin/Dashboard.vue","reason":"Current dashboard cards and stats API usage"}
+{"path":"frontend/src/pages/admin/Applications.vue","reason":"Application management table and modals"}
+{"path":"frontend/src/pages/admin/Users.vue","reason":"User management table, role/status edits, and voice notification toggle"}
+{"path":"frontend/src/pages/admin/Notifications.vue","reason":"Notification management table and detail modal"}
+{"path":"frontend/src/router/index.ts","reason":"Admin route registration"}
+{"path":"frontend/src/services/api.ts","reason":"Frontend API contracts and adminAPI methods"}
+{"path":"backend/src/main/java/com/approval/system/controller/AdminController.java","reason":"Existing admin REST endpoints"}
+{"path":"backend/src/main/java/com/approval/system/config/MiMoConfig.java","reason":"Existing MiMo configuration binding"}
+{"path":"backend/src/main/java/com/approval/system/service/impl/VoiceApplicationServiceImpl.java","reason":"Existing MiMo call site for ASR and extraction"}
+{"path":"backend/src/main/resources/application.yml","reason":"Current MiMo properties and other sensitive configuration values"}

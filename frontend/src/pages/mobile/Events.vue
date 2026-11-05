@@ -1,8 +1,8 @@
 <template>
   <div class="events-page">
-    <van-nav-bar title="纪念日" fixed placeholder>
+    <van-nav-bar title="纪念日" left-arrow fixed placeholder @click-left="$router.back()">
       <template #right>
-        <van-icon name="plus" size="20" @click="openCreate()" />
+        <van-icon name="plus" size="20" aria-label="添加纪念日" @click="openCreate()" />
       </template>
     </van-nav-bar>
 
@@ -11,9 +11,7 @@
         v-for="preset in quickPresets"
         :key="preset.title"
         size="small"
-        round
         plain
-        type="primary"
         native-type="button"
         @click="openCreate(preset)"
       >
@@ -21,43 +19,40 @@
       </van-button>
     </div>
 
-    <van-pull-refresh v-model="refreshing" @refresh="loadEvents">
-      <van-empty v-if="!loading && events.length === 0" description="记录重要的日子">
-        <van-button type="primary" size="small" round @click="openCreate()">添加纪念日</van-button>
+    <van-pull-refresh v-model="refreshing" class="m-page" @refresh="loadEvents">
+      <van-empty v-if="!loading && events.length === 0" class="m-empty" description="记下你们重要的日子">
+        <van-button type="primary" size="small" @click="openCreate()">添加纪念日</van-button>
       </van-empty>
 
       <div v-else class="event-list">
-        <van-swipe-cell v-for="event in sortedEvents" :key="event.id">
-          <div class="event-card" :class="{ 'event-card--today': daysUntil(event) === 0 }">
+        <van-swipe-cell v-for="event in sortedEvents" :key="event.id" class="m-card">
+          <div class="event-row">
             <div class="event-main">
-              <div class="event-header">
-                <van-tag :type="eventTypeTag(event.eventType)" plain>{{ eventTypeText(event.eventType) }}</van-tag>
-                <span class="event-repeat">{{ event.repeatType === 1 ? '每年重复' : '仅一次' }}</span>
+              <div class="m-title">{{ event.title }}</div>
+              <div class="m-meta">
+                <span>{{ eventTypeText(event.eventType) }}</span>
+                <span>{{ event.repeatType === 1 ? '每年' : '仅一次' }} · {{ event.eventDate }}</span>
               </div>
-              <div class="event-title">{{ event.title }}</div>
-              <div class="event-meta">
-                原日期 {{ event.eventDate }} · 下次 {{ formatDate(nextOccurrence(event)) }}
-              </div>
-              <div class="event-reminder">{{ reminderText(event) }}</div>
-              <div v-if="event.note" class="event-note">{{ event.note }}</div>
+              <p class="event-reminder">{{ reminderText(event) }}</p>
+              <p v-if="event.note" class="event-note">{{ event.note }}</p>
             </div>
-            <div class="countdown">
-              <div class="countdown-value">{{ countdownValue(event) }}</div>
-              <div class="countdown-label">{{ countdownLabel(event) }}</div>
+            <div class="countdown" :class="{ 'is-today': eventDays(event) === 0, 'is-past': eventDays(event) < 0 }">
+              <span class="countdown-value tabular">{{ countdownValue(event) }}</span>
+              <span class="countdown-label">{{ countdownLabel(event) }}</span>
             </div>
           </div>
           <template #right>
-            <van-button square type="primary" text="编辑" class="swipe-btn" @click="openEdit(event)" />
-            <van-button square type="danger" text="删除" class="swipe-btn" @click="deleteEvent(event)" />
+            <van-button square type="primary" text="编辑" class="m-swipe-btn" @click="openEdit(event)" />
+            <van-button square type="danger" text="删除" class="m-swipe-btn" @click="deleteEvent(event)" />
           </template>
         </van-swipe-cell>
       </div>
     </van-pull-refresh>
 
     <van-action-sheet v-model:show="showEditor" :title="editingId ? '编辑纪念日' : '添加纪念日'">
-      <van-form class="editor" @submit="saveEvent">
+      <van-form class="m-sheet" @submit="saveEvent">
         <van-cell-group inset>
-          <van-field v-model="form.title" label="名称" placeholder="例如：在一起纪念日" required />
+          <van-field v-model="form.title" label="名称" placeholder="例如：在一起纪念日" maxlength="100" required />
           <van-field label="类型">
             <template #input>
               <van-radio-group v-model="form.eventType" direction="horizontal" class="radio-row">
@@ -68,7 +63,7 @@
             </template>
           </van-field>
           <van-field v-model="form.eventDate" label="日期" type="date" required />
-          <van-field label="重复">
+          <van-field label="每年重复">
             <template #input>
               <van-switch v-model="repeatYearly" size="20" />
             </template>
@@ -82,10 +77,10 @@
               </van-radio-group>
             </template>
           </van-field>
-          <van-field v-model="form.note" label="备注" type="textarea" rows="2" placeholder="可以写下想一起记住的话" />
+          <van-field v-model="form.note" label="备注" type="textarea" rows="2" maxlength="200" placeholder="想一起记住的话" />
         </van-cell-group>
-        <div class="form-actions">
-          <van-button round block type="primary" native-type="submit" :loading="saving">保存</van-button>
+        <div class="m-sheet-footer">
+          <van-button block type="primary" native-type="submit" :loading="saving">保存</van-button>
         </div>
       </van-form>
     </van-action-sheet>
@@ -94,8 +89,9 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { showFailToast, showSuccessToast } from 'vant'
+import { showConfirmDialog, showFailToast, showSuccessToast } from 'vant'
 import { coupleEventAPI, type CoupleEvent, type CoupleEventRequest } from '@/services/api'
+import { daysUntil, todayValue } from '@/utils/format'
 
 type EventPreset = {
   title: string
@@ -106,10 +102,10 @@ type EventPreset = {
 }
 
 const eventTypes = [
-  { label: '纪念日', value: 1, tagType: 'primary' },
-  { label: '生日', value: 2, tagType: 'success' },
-  { label: '约会', value: 3, tagType: 'warning' },
-  { label: '其他', value: 4, tagType: 'default' },
+  { label: '纪念日', value: 1 },
+  { label: '生日', value: 2 },
+  { label: '约会', value: 3 },
+  { label: '其他', value: 4 },
 ] as const
 
 const remindOptions = [
@@ -223,6 +219,11 @@ async function saveEvent() {
 
 async function deleteEvent(event: CoupleEvent) {
   try {
+    await showConfirmDialog({ title: '删除纪念日', message: `确定删除"${event.title}"吗？` })
+  } catch {
+    return
+  }
+  try {
     await coupleEventAPI.delete(event.id)
     showSuccessToast('已删除')
     await loadEvents()
@@ -231,89 +232,47 @@ async function deleteEvent(event: CoupleEvent) {
   }
 }
 
-function daysUntil(event: CoupleEvent) {
-  const today = startOfToday()
-  const next = nextOccurrence(event)
-  return Math.round((next.getTime() - today.getTime()) / 86400000)
+function eventDays(event: CoupleEvent) {
+  return daysUntil(event.eventDate, event.repeatType)
 }
 
 function countdownValue(event: CoupleEvent) {
-  const diff = daysUntil(event)
+  const diff = eventDays(event)
   if (diff === 0) return '今天'
   return Math.abs(diff).toString()
 }
 
 function countdownLabel(event: CoupleEvent) {
-  const diff = daysUntil(event)
-  if (diff === 0) return '就是今天'
+  const diff = eventDays(event)
+  if (diff === 0) return ''
   return diff > 0 ? '天后' : '天前'
 }
 
 function reminderText(event: CoupleEvent) {
   const remindDays = event.remindDaysBefore ?? 0
-  const diff = daysUntil(event)
-  const remindLabel = remindDays === 0 ? '当天提醒' : `提前${remindDays}天提醒`
+  const diff = eventDays(event)
+  const remindLabel = remindDays === 0 ? '当天提醒' : `提前 ${remindDays} 天提醒`
 
-  if (diff < 0) return `已过去 ${Math.abs(diff)} 天 · ${remindLabel}`
-  if (diff === 0) return `今天要记得 · ${remindLabel}`
-  if (diff <= remindDays) return `已进入提醒期 · ${remindLabel}`
+  if (diff < 0) return `已过去 ${Math.abs(diff)} 天`
+  if (diff === 0) return `就是今天 · ${remindLabel}`
+  if (diff <= remindDays) return `快到了 · ${remindLabel}`
   return remindLabel
 }
 
-function nextOccurrence(event: CoupleEvent) {
-  const base = parseLocalDate(event.eventDate)
-  if (event.repeatType !== 1) return base
-
-  const today = startOfToday()
-  const next = new Date(today.getFullYear(), base.getMonth(), base.getDate())
-  if (next < today) {
-    next.setFullYear(next.getFullYear() + 1)
-  }
-  return next
-}
-
 function eventSortKey(event: CoupleEvent) {
-  const diff = daysUntil(event)
+  const diff = eventDays(event)
   return diff < 0 ? 100000 + Math.abs(diff) : diff
 }
 
 function eventTypeText(type?: number) {
   return eventTypes.find(item => item.value === type)?.label || '其他'
 }
-
-function eventTypeTag(type?: number) {
-  return eventTypes.find(item => item.value === type)?.tagType || 'default'
-}
-
-function formatDate(date: Date) {
-  const month = `${date.getMonth() + 1}`.padStart(2, '0')
-  const day = `${date.getDate()}`.padStart(2, '0')
-  return `${month}-${day}`
-}
-
-function todayValue() {
-  const today = new Date()
-  const month = `${today.getMonth() + 1}`.padStart(2, '0')
-  const day = `${today.getDate()}`.padStart(2, '0')
-  return `${today.getFullYear()}-${month}-${day}`
-}
-
-function parseLocalDate(value: string) {
-  const [year, month, day] = value.split('-').map(Number)
-  return new Date(year, month - 1, day)
-}
-
-function startOfToday() {
-  const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate())
-}
 </script>
 
 <style scoped>
 .events-page {
-  min-height: 100vh;
-  background: #f6f7f9;
-  padding-bottom: 72px;
+  min-height: 100%;
+  background: var(--bg);
 }
 
 .preset-strip {
@@ -321,31 +280,26 @@ function startOfToday() {
   gap: 8px;
   padding: 12px 12px 0;
   overflow-x: auto;
-  background: #f6f7f9;
+  scrollbar-width: none;
 }
 
 .preset-strip :deep(.van-button) {
   flex: 0 0 auto;
 }
 
-.event-list {
-  padding: 12px;
+.event-list .m-card + .m-card {
+  margin-top: 8px;
 }
 
-.event-card {
+.event-list :deep(.van-swipe-cell) {
+  overflow: hidden;
+}
+
+.event-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  padding: 16px;
-  margin-bottom: 10px;
-  background: #fff;
-  border-radius: 8px;
-}
-
-.event-card--today {
-  background: #fff8ec;
-  box-shadow: inset 3px 0 0 #ff976a;
+  padding: 14px 16px;
 }
 
 .event-main {
@@ -353,79 +307,51 @@ function startOfToday() {
   min-width: 0;
 }
 
-.event-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+.m-meta {
+  margin-top: 4px;
 }
 
-.event-repeat,
-.event-meta,
-.event-reminder,
-.event-note {
-  color: #777;
-  font-size: 13px;
-}
-
-.event-title {
-  font-weight: 600;
-  color: #202124;
-}
-
-.event-meta,
 .event-reminder,
 .event-note {
   margin-top: 6px;
-  line-height: 1.4;
-}
-
-.event-note {
-  color: #555;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .countdown {
-  width: 64px;
-  min-height: 64px;
-  border-radius: 8px;
-  background: #f2f6ff;
-  color: #3867d6;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
   flex-shrink: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 52px;
 }
 
 .countdown-value {
-  max-width: 58px;
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1.2;
-  text-align: center;
-  word-break: break-all;
+  color: var(--ink);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.1;
 }
 
 .countdown-label {
-  margin-top: 4px;
+  margin-top: 2px;
+  color: var(--ink-3);
   font-size: 12px;
 }
 
-.swipe-btn {
-  height: 100%;
+.countdown.is-today .countdown-value {
+  color: var(--accent);
+  font-size: 20px;
 }
 
-.editor {
-  padding: 16px 0;
+.countdown.is-past .countdown-value {
+  color: var(--ink-3);
 }
 
 .radio-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 14px;
-}
-
-.form-actions {
-  padding: 16px;
+  gap: 8px 14px;
 }
 </style>

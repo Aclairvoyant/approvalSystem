@@ -1,5 +1,6 @@
 package com.approval.system.service.impl;
 
+import com.approval.system.common.exception.BusinessException;
 import com.approval.system.common.utils.OssUtils;
 import com.approval.system.entity.ApplicationAttachment;
 import com.approval.system.mapper.ApplicationAttachmentMapper;
@@ -39,9 +40,11 @@ public class ApplicationAttachmentServiceImpl extends ServiceImpl<ApplicationAtt
 
             this.save(attachment);
             return attachment;
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("上传申请附件失败，applicationId: {}", applicationId, e);
-            throw new RuntimeException("上传附件失败: " + e.getMessage());
+            throw new BusinessException(BusinessException.SERVICE_UNAVAILABLE, "上传附件失败，请稍后重试", e);
         }
     }
 
@@ -61,9 +64,11 @@ public class ApplicationAttachmentServiceImpl extends ServiceImpl<ApplicationAtt
 
             this.save(attachment);
             return attachment;
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("上传申请语音附件失败，applicationId: {}", applicationId, e);
-            throw new RuntimeException("上传附件失败: " + e.getMessage());
+            throw new BusinessException(BusinessException.SERVICE_UNAVAILABLE, "上传附件失败，请稍后重试", e);
         }
     }
 

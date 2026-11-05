@@ -1,5 +1,6 @@
 package com.approval.system.service.impl;
 
+import com.approval.system.common.exception.BusinessException;
 import com.approval.system.config.MiMoConfig;
 import com.approval.system.dto.GobangAiMoveInsight;
 import com.approval.system.dto.GobangAiPoint;
@@ -627,10 +628,10 @@ public class GobangReviewServiceImpl implements IGobangReviewService {
     private GobangGame ensureAuthorizedGame(Long gameId, Long userId) {
         GobangGame game = gobangGameMapper.selectById(gameId);
         if (game == null) {
-            throw new RuntimeException("五子棋对局不存在");
+            throw BusinessException.notFound("五子棋对局不存在");
         }
         if (!isGameParticipant(game, userId)) {
-            throw new RuntimeException("你不是这场五子棋的参与者");
+            throw BusinessException.forbidden("你不是这场五子棋的参与者");
         }
         return game;
     }

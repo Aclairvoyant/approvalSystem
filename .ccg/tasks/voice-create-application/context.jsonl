@@ -1,0 +1,8 @@
+{"_example": "Fill with {\"file\": \"path\", \"reason\": \"why\"}. Seed rows are skipped."}
+{"file": "backend/src/main/java/com/approval/system/config/IhuYiVoiceConfig.java", "reason": "@ConfigurationProperties 配置类模式，MiMo 配置照此写"}
+{"file": "backend/src/main/java/com/approval/system/service/impl/VoiceNotificationServiceImpl.java", "reason": "RestTemplate 调用外部 HTTP API 的现成模式，MiMo 调用照此写"}
+{"file": "backend/src/main/java/com/approval/system/controller/ApplicationController.java", "reason": "申请创建入口，语音解析后复用 createApplication 逻辑/权限校验"}
+{"file": "backend/src/main/resources/application.yml", "reason": "ihuyi.voice 配置段落，MiMo 配置照此风格新增 mimo 段"}
+{"file": "frontend/src/pages/mobile/Applications.vue", "reason": "创建申请表单，语音按钮+自动填充加在这里，复用 newApplication 与 submitApplication"}
+{"file": "frontend/src/services/api.ts", "reason": "applicationAPI 集中定义，新增语音解析 API 方法"}
+{"file": "frontend/src/services/http.ts", "reason": "axios 实例，FormData 上传已支持，语音音频走 multipart"}

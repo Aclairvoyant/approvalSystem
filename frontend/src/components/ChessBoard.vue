@@ -1,78 +1,64 @@
 <template>
   <div class="chess-board">
-    <!-- 基地区域 -->
+    <!-- 基地和终点 -->
     <div class="bases-row">
       <div class="base base-1">
-        <div class="base-title">玩家1</div>
+        <div class="base-title">玩家 1</div>
         <div class="base-slots">
-          <div
-            v-for="i in 2"
-            :key="`base1-${i}`"
-            class="base-slot"
-            :class="{ 'has-piece': player1Pieces[i - 1] === 0 }"
-          >
-            <div
-              v-if="player1Pieces[i - 1] === 0"
+          <div v-for="(pos, idx) in p1" :key="`base1-${idx}`" class="base-slot">
+            <button
+              v-if="pos === 0"
+              type="button"
               class="piece piece-1"
-              :class="{ 'can-move': canMovePiece(1, i - 1) }"
-              @click="handlePieceClick(1, i - 1)"
+              :class="{ 'can-move': canMovePiece(1, idx) }"
+              :disabled="!canMovePiece(1, idx)"
+              @click="handlePieceClick(1, idx)"
             >
-              {{ i }}
-            </div>
+              {{ idx + 1 }}
+            </button>
           </div>
         </div>
       </div>
 
       <div class="destination">
-        <div class="destination-title">终点</div>
+        <div class="base-title">终点</div>
         <div class="destination-pieces">
-          <template v-for="(pos, idx) in player1Pieces" :key="`dest1-${idx}`">
-            <div v-if="pos === 100" class="piece piece-1 at-dest">{{ idx + 1 }}</div>
+          <template v-for="(pos, idx) in p1" :key="`dest1-${idx}`">
+            <span v-if="pos === DESTINATION" class="piece piece-1 at-dest">{{ idx + 1 }}</span>
           </template>
-          <template v-for="(pos, idx) in player2Pieces" :key="`dest2-${idx}`">
-            <div v-if="pos === 100" class="piece piece-2 at-dest">{{ idx + 1 }}</div>
+          <template v-for="(pos, idx) in p2" :key="`dest2-${idx}`">
+            <span v-if="pos === DESTINATION" class="piece piece-2 at-dest">{{ idx + 1 }}</span>
           </template>
         </div>
       </div>
 
       <div class="base base-2">
-        <div class="base-title">玩家2</div>
+        <div class="base-title">玩家 2</div>
         <div class="base-slots">
-          <div
-            v-for="i in 2"
-            :key="`base2-${i}`"
-            class="base-slot"
-            :class="{ 'has-piece': player2Pieces[i - 1] === 0 }"
-          >
-            <div
-              v-if="player2Pieces[i - 1] === 0"
+          <div v-for="(pos, idx) in p2" :key="`base2-${idx}`" class="base-slot">
+            <button
+              v-if="pos === 0"
+              type="button"
               class="piece piece-2"
-              :class="{ 'can-move': canMovePiece(2, i - 1) }"
-              @click="handlePieceClick(2, i - 1)"
+              :class="{ 'can-move': canMovePiece(2, idx) }"
+              :disabled="!canMovePiece(2, idx)"
+              @click="handlePieceClick(2, idx)"
             >
-              {{ i }}
-            </div>
+              {{ idx + 1 }}
+            </button>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- 棋盘格子 -->
+    <!-- 棋盘：蛇形路径，奇数行从右往左 -->
     <div class="board-grid">
-      <div
-        v-for="row in gridRows"
-        :key="row.rowIndex"
-        class="board-row"
-        :class="{ 'reverse': row.reverse }"
-      >
+      <div v-for="row in gridRows" :key="row.rowIndex" class="board-row" :class="{ 'is-reversed': row.reverse }">
         <div
           v-for="cell in row.cells"
           :key="cell.position"
           class="cell"
-          :class="{
-            'task-cell': cell.isTask,
-            'has-pieces': getPiecesAtPosition(cell.position).length > 0
-          }"
+          :class="{ 'task-cell': cell.isTask, 'has-pieces': getPiecesAtPosition(cell.position).length > 0 }"
         >
           <div class="cell-number">{{ cell.position }}</div>
           <div v-if="cell.isTask" class="task-label">
@@ -80,20 +66,18 @@
             <span class="task-text">{{ cell.taskTitle || '任务' }}</span>
           </div>
 
-          <!-- 显示在此格子上的棋子 -->
           <div class="cell-pieces">
-            <div
+            <button
               v-for="piece in getPiecesAtPosition(cell.position)"
               :key="`${piece.player}-${piece.index}`"
+              type="button"
               class="piece"
-              :class="[
-                `piece-${piece.player}`,
-                { 'can-move': canMovePiece(piece.player, piece.index) }
-              ]"
+              :class="[`piece-${piece.player}`, { 'can-move': canMovePiece(piece.player, piece.index) }]"
+              :disabled="!canMovePiece(piece.player, piece.index)"
               @click="handlePieceClick(piece.player, piece.index)"
             >
               {{ piece.index + 1 }}
-            </div>
+            </button>
           </div>
         </div>
       </div>
@@ -140,6 +124,12 @@ const emit = defineEmits<{
 // 配置
 const COLS = 7
 const TOTAL_CELLS = 52
+const DESTINATION = 100
+// 与后端 FlightChessEngineImpl.PIECES_PER_PLAYER 保持一致；旧对局数据里多出来的两枚棋子永远不会动，不显示
+const PIECES_PER_PLAYER = 2
+
+const p1 = computed(() => props.player1Pieces.slice(0, PIECES_PER_PLAYER))
+const p2 = computed(() => props.player2Pieces.slice(0, PIECES_PER_PLAYER))
 
 // 计算网格行
 const gridRows = computed(() => {
@@ -175,6 +165,7 @@ const gridRows = computed(() => {
       })
     }
 
+    // 只在数据里反转一次，CSS 不再 row-reverse，否则两次反转会抵消掉蛇形
     rows.push({
       rowIndex,
       reverse,
@@ -192,10 +183,10 @@ const gridRows = computed(() => {
 function getPiecesAtPosition(position: number): Array<{ player: number; index: number }> {
   const pieces: Array<{ player: number; index: number }> = []
 
-  props.player1Pieces.forEach((pos, idx) => {
+  p1.value.forEach((pos, idx) => {
     if (pos === position) pieces.push({ player: 1, index: idx })
   })
-  props.player2Pieces.forEach((pos, idx) => {
+  p2.value.forEach((pos, idx) => {
     if (pos === position) pieces.push({ player: 2, index: idx })
   })
 
@@ -217,7 +208,7 @@ function canMovePiece(player: number, pieceIndex: number): boolean {
   }
 
   // 已到终点不能移动
-  if (currentPosition === 100) {
+  if (currentPosition === DESTINATION) {
     return false
   }
 
@@ -239,251 +230,216 @@ function handlePieceClick(player: number, pieceIndex: number) {
 }
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .chess-board {
+  --p1: #e5534b;
+  --p2: #3b7dd8;
+  --gap: 4px;
+
   width: 100%;
-  max-width: 100%;
-  padding: 8px;
-  background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
-  border-radius: 12px;
 }
 
 .bases-row {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
   gap: 8px;
+  margin-bottom: 10px;
 }
 
-.base {
+.base,
+.destination {
   flex: 1;
-  padding: 8px;
-  border-radius: 8px;
+  padding: 8px 4px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
   text-align: center;
+}
 
-  &.base-1 {
-    background: linear-gradient(135deg, #ffe4e1 0%, #ffcccb 100%);
-    border: 2px solid #ff6b6b;
-  }
+.base-1 {
+  border-color: rgba(229, 83, 75, 0.45);
+  background: #fdf1f1;
+}
 
-  &.base-2 {
-    background: linear-gradient(135deg, #e6f3ff 0%, #b8d4f0 100%);
-    border: 2px solid #4a90d9;
-  }
-
-  .base-title {
-    font-size: 12px;
-    font-weight: bold;
-    margin-bottom: 6px;
-  }
-
-  .base-slots {
-    display: flex;
-    justify-content: center;
-    gap: 4px;
-  }
-
-  .base-slot {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
+.base-2 {
+  border-color: rgba(59, 125, 216, 0.45);
+  background: #eff5fc;
 }
 
 .destination {
-  flex: 1;
-  padding: 8px;
-  background: linear-gradient(135deg, #d4edda 0%, #90ee90 100%);
-  border: 2px solid #28a745;
-  border-radius: 8px;
-  text-align: center;
+  background: var(--ok-soft);
+}
 
-  .destination-title {
-    font-size: 12px;
-    font-weight: bold;
-    color: #155724;
-    margin-bottom: 6px;
-  }
+.base-title {
+  margin-bottom: 6px;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 600;
+}
 
-  .destination-pieces {
-    display: flex;
-    justify-content: center;
-    gap: 4px;
-    min-height: 28px;
-    flex-wrap: wrap;
-  }
+.base-slots,
+.destination-pieces {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.base-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px dashed var(--rule-strong);
+  border-radius: 50%;
 }
 
 .board-grid {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--gap);
 }
 
 .board-row {
   display: flex;
-  gap: 4px;
+  gap: var(--gap);
+}
 
-  &.reverse {
-    flex-direction: row-reverse;
-  }
+/* 最后一行不满 7 格时保持和其他行同样的格子大小，从路径方向的起点排起 */
+.board-row.is-reversed {
+  justify-content: flex-end;
 }
 
 .cell {
-  flex: 1;
-  aspect-ratio: 1;
-  min-width: 0;
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  position: relative;
   display: flex;
+  flex: 0 0 calc((100% - var(--gap) * (7 - 1)) / 7);
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  position: relative;
+  min-width: 0;
   padding: 2px;
-  transition: all 0.2s;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  aspect-ratio: 1;
+}
 
-  &.task-cell {
-    background: linear-gradient(135deg, #fff9e6 0%, #ffe066 100%);
-    border-color: #ffc107;
+.cell.task-cell {
+  border-color: #ecd48f;
+  background: #fff8e1;
+}
 
-    .cell-number {
-      color: #856404;
-    }
-  }
+.cell.has-pieces {
+  border-color: var(--rule-strong);
+}
 
-  &.has-pieces {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  }
+.cell-number {
+  position: absolute;
+  top: 1px;
+  left: 3px;
+  color: var(--ink-3);
+  font-size: 10px;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
 
-  .cell-number {
-    font-size: 8px;
-    color: #999;
-    position: absolute;
-    top: 1px;
-    left: 3px;
-  }
+.task-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 100%;
+  margin-top: 8px;
+}
 
-  .task-label {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
-    margin-top: 6px;
+.task-icon {
+  color: #b7791f;
+  font-size: 11px;
+  line-height: 1;
+}
 
-    .task-icon {
-      font-size: 10px;
-      color: #ff8c00;
-    }
+.task-text {
+  max-width: 100%;
+  overflow: hidden;
+  color: #8a5a00;
+  font-size: 10px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
-    .task-text {
-      font-size: 8px;
-      color: #856404;
-      font-weight: bold;
-      text-align: center;
-      line-height: 1;
-      max-width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-  }
-
-  .cell-pieces {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 2px;
-    margin-top: auto;
-  }
+.cell-pieces {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px;
+  margin-top: auto;
 }
 
 .piece {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  font-weight: bold;
-  color: white;
-  cursor: default;
-  transition: all 0.2s;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
   user-select: none;
-
-  &.piece-1 {
-    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
-    border: 2px solid #cc0000;
-  }
-
-  &.piece-2 {
-    background: linear-gradient(135deg, #4a90d9 0%, #3a7bc8 100%);
-    border: 2px solid #1a5fb4;
-  }
-
-  &.can-move {
-    cursor: pointer;
-    animation: pulse 1s infinite;
-    box-shadow: 0 0 10px currentColor;
-
-    &.piece-1 {
-      box-shadow: 0 0 10px #ff6b6b;
-    }
-
-    &.piece-2 {
-      box-shadow: 0 0 10px #4a90d9;
-    }
-  }
-
-  &.at-dest {
-    width: 20px;
-    height: 20px;
-    font-size: 10px;
-  }
+  cursor: default;
 }
 
-@keyframes pulse {
-  0%, 100% {
-    transform: scale(1);
-  }
+.piece:disabled {
+  opacity: 1;
+}
+
+.piece-1 {
+  background: var(--p1);
+}
+
+.piece-2 {
+  background: var(--p2);
+}
+
+/* 可移动的棋子：外圈描边 + 轻微跳动，提示可以点 */
+.piece.can-move {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+  cursor: pointer;
+  animation: nudge 1.1s ease-in-out infinite;
+}
+
+.piece.at-dest {
+  width: 20px;
+  height: 20px;
+  font-size: 10px;
+}
+
+@keyframes nudge {
   50% {
-    transform: scale(1.15);
+    transform: translateY(-2px);
   }
 }
 
-// 响应式调整
-@media (max-width: 360px) {
-  .cell {
-    .cell-number {
-      font-size: 7px;
-    }
-
-    .task-label {
-      .task-icon {
-        font-size: 8px;
-      }
-      .task-text {
-        font-size: 7px;
-      }
-    }
+@media (prefers-reduced-motion: reduce) {
+  .piece.can-move {
+    animation: none;
   }
+}
 
+@media (max-width: 360px) {
   .piece {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     font-size: 10px;
   }
 
-  .base .base-slot {
-    width: 24px;
-    height: 24px;
+  .task-text {
+    display: none;
   }
 }
 </style>

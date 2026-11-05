@@ -20,5 +20,11 @@ public interface IDailyItemService extends IService<DailyItem> {
 
     List<DailyItem> listOverdueItems(Long userId);
 
+    /** 今天待完成事项的总数（listTodayItems 只返回前 5 条） */
+    long countTodayItems(Long userId);
+
+    /** 已逾期事项的总数（listOverdueItems 只返回前 5 条） */
+    long countOverdueItems(Long userId);
+
     void deleteItem(Long userId, Long itemId);
 }

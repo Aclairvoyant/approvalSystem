@@ -1,13 +1,13 @@
 package com.approval.system.service.impl;
 
 import com.approval.system.common.enums.NotifyTypeEnum;
-
+import com.approval.system.common.enums.SendStatusEnum;
 import com.approval.system.common.utils.SmsUtils;
 import com.approval.system.entity.Notification;
 import com.approval.system.mapper.NotificationMapper;
 import com.approval.system.service.IEmailService;
 import com.approval.system.service.INotificationService;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,7 +39,7 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
                     .notifyTitle(title)
                     .notifyContent(content)
                     .phone(phone)
-                    .sendStatus(1) // 1=待发送
+                    .sendStatus(SendStatusEnum.PENDING.getCode())
                     .createdAt(LocalDateTime.now())
                     .build();
             this.save(notification);
@@ -47,10 +47,10 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
             boolean success = smsUtils.sendSms(phone, title, content);
 
             if (success) {
-                notification.setSendStatus(2); // 已发送
+                notification.setSendStatus(SendStatusEnum.SENT.getCode());
                 notification.setSentAt(LocalDateTime.now());
             } else {
-                notification.setSendStatus(3); // 发送失败
+                notification.setSendStatus(SendStatusEnum.FAILED.getCode());
                 notification.setSendError("短信发送失败");
             }
 
@@ -72,7 +72,7 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
                     .notifyTitle(title)
                     .notifyContent(content)
                     .email(email)
-                    .sendStatus(1) // 1=待发送
+                    .sendStatus(SendStatusEnum.PENDING.getCode())
                     .createdAt(LocalDateTime.now())
                     .build();
             this.save(notification);
@@ -80,10 +80,10 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
             boolean success = emailService.sendEmail(email, title, content);
 
             if (success) {
-                notification.setSendStatus(2); // 已发送
+                notification.setSendStatus(SendStatusEnum.SENT.getCode());
                 notification.setSentAt(LocalDateTime.now());
             } else {
-                notification.setSendStatus(3); // 发送失败
+                notification.setSendStatus(SendStatusEnum.FAILED.getCode());
                 notification.setSendError("邮件发送失败");
             }
 
@@ -95,9 +95,9 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
 
     @Override
     public void processPendingNotifications() {
-        QueryWrapper<Notification> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("send_status", 1); // 1=待发送
-        queryWrapper.le("created_at", LocalDateTime.now());
+        LambdaQueryWrapper<Notification> queryWrapper = new LambdaQueryWrapper<Notification>()
+                .eq(Notification::getSendStatus, SendStatusEnum.PENDING.getCode())
+                .le(Notification::getCreatedAt, LocalDateTime.now());
 
         List<Notification> notifications = this.list(queryWrapper);
 
@@ -111,16 +111,16 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
                 }
 
                 if (success) {
-                    notification.setSendStatus(2); // 已发送
+                    notification.setSendStatus(SendStatusEnum.SENT.getCode());
                     notification.setSentAt(LocalDateTime.now());
                 } else {
-                    notification.setSendStatus(3); // 发送失败
+                    notification.setSendStatus(SendStatusEnum.FAILED.getCode());
                     notification.setSendError("通知发送失败");
                 }
                 this.updateById(notification);
             } catch (Exception e) {
                 log.error("处理待发送通知失败，notificationId: {}", notification.getId(), e);
-                notification.setSendStatus(3);
+                notification.setSendStatus(SendStatusEnum.FAILED.getCode());
                 notification.setSendError(e.getMessage());
                 this.updateById(notification);
             }
@@ -137,7 +137,7 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
                 .notifyContent(content)
                 .phone(phone)
                 .email(email)
-                .sendStatus(1) // 1=待发送
+                .sendStatus(SendStatusEnum.PENDING.getCode())
                 .createdAt(LocalDateTime.now())
                 .build();
 
@@ -156,7 +156,7 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
                 .notifyContent(content)
                 .phone(phone)
                 .email(email)
-                .sendStatus(success ? 2 : 3) // 2=已发送, 3=发送失败
+                .sendStatus(success ? SendStatusEnum.SENT.getCode() : SendStatusEnum.FAILED.getCode())
                 .sentAt(success ? LocalDateTime.now() : null)
                 .sendError(success ? null : "发送失败")
                 .createdAt(LocalDateTime.now())

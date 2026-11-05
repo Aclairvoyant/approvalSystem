@@ -63,13 +63,13 @@ public class GameWebSocketController {
         try {
             // 验证玩家权限
             if (!gameService.validateGamePlayer(gameId, userId)) {
-                sendError(gameId, "您不是这场游戏的参与者");
+                sendError(gameId, userId, "您不是这场游戏的参与者");
                 return;
             }
 
             // 验证轮次
             if (!gameService.isPlayerTurn(gameId, userId)) {
-                sendError(gameId, "还没轮到您");
+                sendError(gameId, userId, "还没轮到您");
                 return;
             }
 
@@ -105,16 +105,15 @@ public class GameWebSocketController {
                         .build();
                 broadcastToGame(gameId, skipMessage);
 
-                // 切换回合（掷到6也要切换，因为没有可移动的棋子）
-                int newTurn = game.getCurrentTurn() == 1 ? 2 : 1;
-                game.setCurrentTurn(newTurn);
-                game.setLastDiceResult(null);  // 清空骰子结果
-                gameService.updateById(game);
-
-                // 广播轮次切换
-                Long nextPlayerId = newTurn == 1 ? game.getPlayer1Id() : game.getPlayer2Id();
-                GameMessage turnMessage = GameMessage.turnChanged(gameId, newTurn, nextPlayerId);
-                broadcastToGame(gameId, turnMessage);
+                // 切换回合并清空骰子（掷到6也要切换，因为没有可移动的棋子）
+                Game passed = gameService.passTurn(gameId, userId);
+                if (passed != null) {
+                    // 广播轮次切换
+                    int newTurn = passed.getCurrentTurn();
+                    Long nextPlayerId = newTurn == 1 ? passed.getPlayer1Id() : passed.getPlayer2Id();
+                    GameMessage turnMessage = GameMessage.turnChanged(gameId, newTurn, nextPlayerId);
+                    broadcastToGame(gameId, turnMessage);
+                }
             }
 
             // 发送游戏状态更新
@@ -122,7 +121,7 @@ public class GameWebSocketController {
 
         } catch (Exception e) {
             log.error("掷骰子失败: gameId={}, userId={}", gameId, userId, e);
-            sendError(gameId, e.getMessage());
+            sendError(gameId, userId, e.getMessage());
         }
     }
 
@@ -138,27 +137,26 @@ public class GameWebSocketController {
         Long userId = getUserIdFromSession(headerAccessor);
         String username = getUsernameFromSession(headerAccessor);
 
+        // 点数由服务端按本回合记录的骰子决定，忽略客户端传来的 diceResult
         Integer pieceIndex = (Integer) payload.get("pieceIndex");
-        Integer diceResult = (Integer) payload.get("diceResult");
 
-        log.info("移动棋子请求: gameId={}, userId={}, pieceIndex={}, diceResult={}",
-                gameId, userId, pieceIndex, diceResult);
+        log.info("移动棋子请求: gameId={}, userId={}, pieceIndex={}", gameId, userId, pieceIndex);
 
         try {
             // 验证玩家权限
             if (!gameService.validateGamePlayer(gameId, userId)) {
-                sendError(gameId, "您不是这场游戏的参与者");
+                sendError(gameId, userId, "您不是这场游戏的参与者");
                 return;
             }
 
             // 验证轮次
             if (!gameService.isPlayerTurn(gameId, userId)) {
-                sendError(gameId, "还没轮到您");
+                sendError(gameId, userId, "还没轮到您");
                 return;
             }
 
             // 移动棋子
-            GameResponse gameResponse = gameService.movePiece(gameId, userId, pieceIndex, diceResult);
+            GameResponse gameResponse = gameService.movePiece(gameId, userId, pieceIndex);
 
             // 获取移动前后位置
             Game game = gameService.getGameById(gameId);
@@ -251,7 +249,7 @@ public class GameWebSocketController {
 
         } catch (Exception e) {
             log.error("移动棋子失败: gameId={}, userId={}", gameId, userId, e);
-            sendError(gameId, e.getMessage());
+            sendError(gameId, userId, e.getMessage());
         }
     }
 
@@ -287,7 +285,7 @@ public class GameWebSocketController {
 
         } catch (Exception e) {
             log.error("完成任务失败: gameId={}, userId={}, recordId={}", gameId, userId, recordId, e);
-            sendError(gameId, e.getMessage());
+            sendError(gameId, userId, e.getMessage());
         }
     }
 
@@ -322,7 +320,7 @@ public class GameWebSocketController {
 
         } catch (Exception e) {
             log.error("放弃任务失败: gameId={}, userId={}, recordId={}", gameId, userId, recordId, e);
-            sendError(gameId, e.getMessage());
+            sendError(gameId, userId, e.getMessage());
         }
     }
 
@@ -343,7 +341,7 @@ public class GameWebSocketController {
             sendGameStateUpdate(gameId, userId, username);
         } catch (Exception e) {
             log.error("同步游戏状态失败: gameId={}, userId={}", gameId, userId, e);
-            sendError(gameId, e.getMessage());
+            sendError(gameId, userId, e.getMessage());
         }
     }
 
@@ -388,8 +386,8 @@ public class GameWebSocketController {
     /**
      * 发送错误消息
      */
-    private void sendError(Long gameId, String errorMessage) {
-        GameMessage message = GameMessage.error(gameId, errorMessage);
+    private void sendError(Long gameId, Long userId, String errorMessage) {
+        GameMessage message = GameMessage.error(gameId, userId, errorMessage);
         broadcastToGame(gameId, message);
     }
 

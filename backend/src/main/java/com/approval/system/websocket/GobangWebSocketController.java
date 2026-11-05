@@ -1,5 +1,6 @@
 package com.approval.system.websocket;
 
+import com.approval.system.common.exception.BusinessException;
 import com.approval.system.common.enums.GameStatusEnum;
 import com.approval.system.dto.GobangResponse;
 import com.approval.system.service.IGobangService;
@@ -41,7 +42,7 @@ public class GobangWebSocketController {
             }
         } catch (Exception e) {
             log.error("五子棋落子失败: gameId={}, userId={}", gameId, userId, e);
-            sendError(gameId, e.getMessage());
+            sendError(gameId, userId, e.getMessage());
         }
     }
 
@@ -54,7 +55,7 @@ public class GobangWebSocketController {
             broadcast(gameId, GobangMessage.undoRequested(gameId, userId, username, response));
         } catch (Exception e) {
             log.error("五子棋悔棋请求失败: gameId={}, userId={}", gameId, userId, e);
-            sendError(gameId, e.getMessage());
+            sendError(gameId, userId, e.getMessage());
         }
     }
 
@@ -70,7 +71,7 @@ public class GobangWebSocketController {
             broadcast(gameId, GobangMessage.undoResolved(gameId, userId, username, accepted, response));
         } catch (Exception e) {
             log.error("五子棋悔棋响应失败: gameId={}, userId={}", gameId, userId, e);
-            sendError(gameId, e.getMessage());
+            sendError(gameId, userId, e.getMessage());
         }
     }
 
@@ -84,7 +85,7 @@ public class GobangWebSocketController {
             broadcast(gameId, GobangMessage.gameEnded(gameId, response));
         } catch (Exception e) {
             log.error("五子棋认输失败: gameId={}, userId={}", gameId, userId, e);
-            sendError(gameId, e.getMessage());
+            sendError(gameId, userId, e.getMessage());
         }
     }
 
@@ -97,7 +98,7 @@ public class GobangWebSocketController {
             broadcast(gameId, GobangMessage.stateUpdate(gameId, userId, username, response));
         } catch (Exception e) {
             log.error("五子棋同步失败: gameId={}, userId={}", gameId, userId, e);
-            sendError(gameId, e.getMessage());
+            sendError(gameId, userId, e.getMessage());
         }
     }
 
@@ -117,8 +118,8 @@ public class GobangWebSocketController {
         messagingTemplate.convertAndSend("/topic/gobang/" + gameId, message);
     }
 
-    private void sendError(Long gameId, String errorMessage) {
-        broadcast(gameId, GobangMessage.error(gameId, errorMessage));
+    private void sendError(Long gameId, Long userId, String errorMessage) {
+        broadcast(gameId, GobangMessage.error(gameId, userId, errorMessage));
     }
 
     private Integer readInt(Map<String, Object> payload, String key) {
@@ -126,7 +127,7 @@ public class GobangWebSocketController {
         if (value instanceof Number number) {
             return number.intValue();
         }
-        throw new RuntimeException("参数 " + key + " 无效");
+        throw BusinessException.badRequest("参数 " + key + " 无效");
     }
 
     private Boolean readBoolean(Map<String, Object> payload, String key) {
@@ -134,7 +135,7 @@ public class GobangWebSocketController {
         if (value instanceof Boolean bool) {
             return bool;
         }
-        throw new RuntimeException("参数 " + key + " 无效");
+        throw BusinessException.badRequest("参数 " + key + " 无效");
     }
 
     private Long getUserIdFromSession(SimpMessageHeaderAccessor headerAccessor) {

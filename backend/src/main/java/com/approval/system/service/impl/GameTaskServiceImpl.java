@@ -1,5 +1,7 @@
 package com.approval.system.service.impl;
 
+import com.approval.system.common.exception.BusinessException;
+import com.approval.system.common.enums.GameTaskTypeEnum;
 import com.approval.system.dto.GameTaskResponse;
 import com.approval.system.dto.TaskCreateRequest;
 import com.approval.system.entity.GameTask;
@@ -31,7 +33,7 @@ public class GameTaskServiceImpl extends ServiceImpl<GameTaskMapper, GameTask> i
         log.info("创建自定义任务: userId={}, title={}", userId, request.getTitle());
 
         GameTask task = GameTask.builder()
-                .taskType(2)  // 自定义任务
+                .taskType(GameTaskTypeEnum.CUSTOM.getCode())
                 .creatorId(userId)
                 .category(request.getCategory())
                 .difficulty(request.getDifficulty())
@@ -54,7 +56,7 @@ public class GameTaskServiceImpl extends ServiceImpl<GameTaskMapper, GameTask> i
     @Override
     public Page<GameTaskResponse> getPresetTasks(String category, Integer difficulty, Integer pageNum, Integer pageSize) {
         QueryWrapper<GameTask> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("task_type", 1);  // 预设任务
+        queryWrapper.eq("task_type", GameTaskTypeEnum.PRESET.getCode());
         queryWrapper.eq("is_active", 1);
 
         if (category != null && !category.isEmpty()) {
@@ -76,7 +78,7 @@ public class GameTaskServiceImpl extends ServiceImpl<GameTaskMapper, GameTask> i
     @Override
     public Page<GameTaskResponse> getUserCustomTasks(Long userId, Integer pageNum, Integer pageSize) {
         QueryWrapper<GameTask> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("task_type", 2);  // 自定义任务
+        queryWrapper.eq("task_type", GameTaskTypeEnum.CUSTOM.getCode());
         queryWrapper.eq("creator_id", userId);
         queryWrapper.eq("is_active", 1);
         queryWrapper.orderByDesc("created_at");
@@ -146,16 +148,16 @@ public class GameTaskServiceImpl extends ServiceImpl<GameTaskMapper, GameTask> i
         GameTask task = this.getById(taskId);
 
         if (task == null) {
-            throw new RuntimeException("任务不存在");
+            throw BusinessException.notFound("任务不存在");
         }
 
         // 只能删除自己创建的自定义任务
         if (!task.getCreatorId().equals(userId)) {
-            throw new RuntimeException("无权删除该任务");
+            throw BusinessException.forbidden("无权删除该任务");
         }
 
-        if (task.getTaskType() != 2) {
-            throw new RuntimeException("不能删除预设任务");
+        if (!GameTaskTypeEnum.CUSTOM.is(task.getTaskType())) {
+            throw BusinessException.forbidden("不能删除预设任务");
         }
 
         // 软删除
@@ -179,7 +181,7 @@ public class GameTaskServiceImpl extends ServiceImpl<GameTaskMapper, GameTask> i
     public GameTaskResponse getTaskById(Long taskId) {
         GameTask task = this.getById(taskId);
         if (task == null) {
-            throw new RuntimeException("任务不存在");
+            throw BusinessException.notFound("任务不存在");
         }
         return convertToResponse(task);
     }

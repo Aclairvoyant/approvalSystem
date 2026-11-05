@@ -2,10 +2,8 @@
   <div class="admin-layout">
     <aside class="admin-sidebar">
       <div class="logo">
-        <div class="logo-icon">
-          <icon-apps />
-        </div>
-        <div class="logo-text">审批管理系统</div>
+        <span class="logo-mark" aria-hidden="true">审</span>
+        <span class="logo-text">审批管理后台</span>
       </div>
 
       <nav class="menu" aria-label="后台导航">
@@ -15,58 +13,45 @@
           :to="item.path"
           class="menu-item"
           :class="{ active: isActive(item.path) }"
+          :title="item.label"
         >
           <component :is="item.icon" class="menu-icon" />
-          <span>{{ item.label }}</span>
+          <span class="menu-label">{{ item.label }}</span>
         </router-link>
       </nav>
 
-      <div class="sidebar-footer">
-        <div class="version-info">
-          <icon-code-square class="version-icon" />
-          <span>v1.0.0</span>
-        </div>
-      </div>
+      <div class="sidebar-footer">v1.0.0</div>
     </aside>
 
     <div class="admin-content">
       <header class="admin-header">
         <div class="header-left">
-          <a-button class="mobile-menu-button" type="text" @click="mobileMenuVisible = true">
+          <a-button class="mobile-menu-button" type="text" aria-label="打开导航" @click="mobileMenuVisible = true">
             <template #icon><icon-menu-unfold /></template>
           </a-button>
-          <div class="header-breadcrumb">
-            <icon-home />
-            <span class="breadcrumb-divider">/</span>
-            <span class="breadcrumb-current">{{ currentPageTitle }}</span>
-          </div>
+          <h1 class="header-title">{{ currentPageTitle }}</h1>
         </div>
 
-        <div class="user-info">
-          <a-avatar :size="36" :style="{ backgroundColor: '#2563eb' }">
-            {{ getInitials(userStore.realName || userStore.username) }}
-          </a-avatar>
-          <div class="user-details">
-            <div class="user-name">{{ userStore.realName || userStore.username }}</div>
-            <div class="user-role">管理员</div>
-          </div>
-          <a-dropdown @select="handleUserMenuSelect">
-            <a-button type="text" class="user-menu-btn">
-              <icon-down />
-            </a-button>
-            <template #content>
-              <a-doption value="profile">
-                <icon-user /> 个人资料
-              </a-doption>
-              <a-doption value="settings">
-                <icon-settings /> 设置
-              </a-doption>
-              <a-doption value="logout" class="logout-option">
-                <icon-export /> 退出登录
-              </a-doption>
-            </template>
-          </a-dropdown>
-        </div>
+        <a-dropdown trigger="click" @select="handleUserMenuSelect">
+          <button type="button" class="user-info">
+            <UserAvatar :src="userStore.avatar" :name="userStore.displayName" :size="32" />
+            <span class="user-details">
+              <span class="user-name">{{ userStore.displayName }}</span>
+              <span class="user-role">{{ userStore.isAdmin ? '管理员' : '普通用户' }}</span>
+            </span>
+            <icon-down class="user-caret" />
+          </button>
+          <template #content>
+            <a-doption value="mobile">
+              <template #icon><icon-mobile /></template>
+              返回移动端
+            </a-doption>
+            <a-doption value="logout" class="logout-option">
+              <template #icon><icon-export /></template>
+              退出登录
+            </a-doption>
+          </template>
+        </a-dropdown>
       </header>
 
       <main class="admin-main">
@@ -78,11 +63,11 @@
       v-model:visible="mobileMenuVisible"
       title="后台导航"
       placement="left"
-      :width="288"
+      :width="264"
       :footer="false"
       unmount-on-close
     >
-      <nav class="mobile-menu" aria-label="手机后台导航">
+      <nav class="mobile-menu" aria-label="后台导航">
         <router-link
           v-for="item in adminMenu"
           :key="item.path"
@@ -102,22 +87,21 @@
 <script setup lang="ts">
 import { computed, ref, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useUserStore } from '@/store/modules/user'
 import { Message } from '@arco-design/web-vue'
 import {
-  IconApps,
   IconDashboard,
   IconFile,
   IconUserGroup,
   IconNotification,
-  IconCodeSquare,
-  IconHome,
-  IconDown,
-  IconUser,
   IconSettings,
+  IconDown,
   IconExport,
-  IconMenuUnfold
+  IconMenuUnfold,
+  IconMobile
 } from '@arco-design/web-vue/es/icon'
+import { useUserStore } from '@/store/modules/user'
+import { endSession } from '@/services/session'
+import UserAvatar from '@/components/UserAvatar.vue'
 
 interface AdminMenuItem {
   path: string
@@ -134,88 +118,77 @@ const adminMenu: AdminMenuItem[] = [
   { path: '/admin/dashboard', label: '仪表盘', icon: IconDashboard },
   { path: '/admin/applications', label: '申请管理', icon: IconFile },
   { path: '/admin/users', label: '用户管理', icon: IconUserGroup },
-  { path: '/admin/notifications', label: '通知管理', icon: IconNotification },
+  { path: '/admin/notifications', label: '通知记录', icon: IconNotification },
   { path: '/admin/system', label: '系统配置', icon: IconSettings }
 ]
 
-const currentPageTitle = computed(() => {
-  const current = adminMenu.find((item) => route.path === item.path || route.path.startsWith(`${item.path}/`))
-  return current?.label || '管理后台'
-})
+const isActive = (path: string): boolean => route.path === path || route.path.startsWith(`${path}/`)
 
-const isActive = (path: string): boolean => {
-  return route.path === path || route.path.startsWith(`${path}/`)
-}
+const currentPageTitle = computed(() => adminMenu.find(item => isActive(item.path))?.label || '管理后台')
 
-const getInitials = (name: string): string => {
-  if (!name) return 'A'
-  return name.charAt(0).toUpperCase()
-}
-
-const handleUserMenuSelect = (value: string | number): void => {
+const handleUserMenuSelect = (value: string | number | Record<string, unknown> | undefined): void => {
   if (value === 'logout') {
-    userStore.clearUserInfo()
+    endSession()
     Message.success('已退出登录')
-    router.push('/login')
-  } else if (value === 'profile') {
-    Message.info('个人资料功能开发中')
-  } else if (value === 'settings') {
-    Message.info('设置功能开发中')
+    router.replace('/login')
+  } else if (value === 'mobile') {
+    router.push('/mobile/home')
   }
 }
 </script>
 
 <style scoped>
+/* 整个后台固定在一屏内，只有主内容区滚动，头部和侧栏始终可见 */
 .admin-layout {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: var(--admin-bg);
 }
 
 .admin-sidebar {
-  position: relative;
-  z-index: 100;
   display: flex;
-  width: 260px;
-  flex: 0 0 260px;
+  flex: 0 0 232px;
   flex-direction: column;
-  color: #ffffff;
+  width: 232px;
   background: #172033;
-  box-shadow: 8px 0 24px rgba(23, 32, 51, 0.12);
+  color: #fff;
 }
 
 .logo {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 22px 20px;
+  gap: 10px;
+  height: 60px;
+  padding: 0 20px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.logo-icon {
+.logo-mark {
   display: flex;
-  width: 40px;
-  height: 40px;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 8px;
-  color: #93c5fd;
-  background: rgba(37, 99, 235, 0.16);
-  font-size: 22px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--accent);
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .logo-text {
-  min-width: 0;
+  overflow: hidden;
   color: #f8fafc;
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .menu {
   flex: 1;
-  padding: 14px 10px;
+  padding: 12px 8px;
   overflow-y: auto;
 }
 
@@ -226,18 +199,16 @@ const handleUserMenuSelect = (value: string | number): void => {
   align-items: center;
   gap: 12px;
   min-width: 0;
-  padding: 12px 14px;
-  border-radius: 8px;
-  color: rgba(255, 255, 255, 0.72);
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.68);
   font-size: 14px;
-  font-weight: 550;
-  line-height: 1.3;
   text-decoration: none;
-  transition: background 0.2s ease, color 0.2s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .menu-item + .menu-item {
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .menu-icon {
@@ -245,115 +216,103 @@ const handleUserMenuSelect = (value: string | number): void => {
   font-size: 18px;
 }
 
-.menu-item:hover,
+.menu-item:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
 .menu-item.active {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.09);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  font-weight: 600;
 }
 
 .menu-item.active::before {
   position: absolute;
-  top: 50%;
+  top: 9px;
+  bottom: 9px;
   left: 0;
   width: 3px;
-  height: 22px;
-  border-radius: 0 3px 3px 0;
-  background: #60a5fa;
+  border-radius: 0 2px 2px 0;
+  background: #a5b4fc;
   content: '';
-  transform: translateY(-50%);
 }
 
 .sidebar-footer {
-  padding: 16px 20px;
+  padding: 14px 20px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.version-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: rgba(255, 255, 255, 0.52);
-  font-size: 13px;
-}
-
-.version-icon {
-  font-size: 16px;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
 }
 
 .admin-content {
   display: flex;
   flex: 1;
-  min-width: 0;
   flex-direction: column;
-  overflow: hidden;
+  min-width: 0;
 }
 
 .admin-header {
-  position: relative;
-  z-index: 10;
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 28px;
-  background: #ffffff;
+  height: 60px;
+  padding: 0 24px;
   border-bottom: 1px solid var(--admin-border);
+  background: var(--admin-surface);
 }
 
 .header-left {
   display: flex;
-  min-width: 0;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
+}
+
+.header-title {
+  overflow: hidden;
+  color: var(--admin-text);
+  font-size: 16px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mobile-menu-button {
   display: none;
 }
 
-.header-breadcrumb {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-  color: #86909c;
-  font-size: 14px;
-}
-
-.breadcrumb-divider {
-  color: #c9cdd4;
-}
-
-.breadcrumb-current {
-  overflow: hidden;
-  color: var(--admin-text);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .user-info {
   display: flex;
-  flex: 0 0 auto;
   align-items: center;
   gap: 10px;
-  min-width: 0;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.user-info:hover {
+  background: var(--surface-2);
 }
 
 .user-details {
   display: flex;
-  min-width: 0;
   flex-direction: column;
-  gap: 2px;
+  align-items: flex-start;
+  min-width: 0;
 }
 
 .user-name {
-  max-width: 132px;
+  max-width: 140px;
   overflow: hidden;
   color: var(--admin-text);
   font-size: 14px;
-  font-weight: 650;
-  line-height: 1.2;
+  font-weight: 600;
+  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -361,95 +320,76 @@ const handleUserMenuSelect = (value: string | number): void => {
 .user-role {
   color: var(--admin-text-muted);
   font-size: 12px;
-  line-height: 1.2;
+  line-height: 1.3;
 }
 
-.user-menu-btn {
-  color: #4e5969;
+.user-caret {
+  color: var(--admin-text-muted);
 }
 
 .admin-main {
   flex: 1;
-  min-width: 0;
+  min-height: 0;
+  padding: 24px;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 24px 28px;
 }
 
 .mobile-menu {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .mobile-menu-item {
-  min-height: 44px;
-  color: #4e5969;
-  background: #f7f8fa;
+  color: var(--ink-2);
 }
 
 .mobile-menu-item.active {
-  color: #1d4ed8;
-  background: #eaf2ff;
-}
-
-:deep(.arco-dropdown-option) {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-:deep(.logout-option) {
-  color: #f53f3f;
-}
-
-:deep(.arco-avatar) {
+  background: var(--accent-soft);
+  color: var(--accent);
   font-weight: 600;
 }
 
-.menu::-webkit-scrollbar,
-.admin-main::-webkit-scrollbar {
-  width: 6px;
+:deep(.logout-option) {
+  color: var(--danger);
 }
 
-.menu::-webkit-scrollbar-track,
-.admin-main::-webkit-scrollbar-track {
-  background: transparent;
-}
+/* 平板宽度：侧栏收成只显示图标，给表格留出空间 */
+@media (min-width: 769px) and (max-width: 1199px) {
+  .admin-sidebar {
+    flex-basis: 64px;
+    width: 64px;
+  }
 
-.menu::-webkit-scrollbar-thumb,
-.admin-main::-webkit-scrollbar-thumb {
-  border-radius: 3px;
-  background: rgba(148, 163, 184, 0.6);
+  .logo {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .logo-text,
+  .menu-label,
+  .sidebar-footer {
+    display: none;
+  }
+
+  .menu-item {
+    justify-content: center;
+    padding: 10px 0;
+  }
 }
 
 @media (max-width: 768px) {
-  .admin-layout {
-    display: block;
-    min-width: 0;
-    overflow-x: hidden;
-  }
-
   .admin-sidebar {
     display: none;
   }
 
-  .admin-content {
-    min-height: 100vh;
-  }
-
   .admin-header {
-    gap: 10px;
-    padding: 12px 14px;
+    padding: 0 12px;
   }
 
   .mobile-menu-button {
     display: inline-flex;
-    flex: 0 0 auto;
-  }
-
-  .header-breadcrumb {
-    font-size: 13px;
   }
 
   .user-details {
@@ -457,7 +397,7 @@ const handleUserMenuSelect = (value: string | number): void => {
   }
 
   .admin-main {
-    padding: 16px 14px 24px;
+    padding: 16px 12px 24px;
   }
 }
 </style>

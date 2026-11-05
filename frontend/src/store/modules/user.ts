@@ -1,8 +1,18 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { components } from '@/services/api.d'
+import type { LoginResponse, User } from '@/services/api'
 
-type LoginResponse = components['schemas']['LoginResponse']
+const STORAGE_KEYS = [
+  'token',
+  'userId',
+  'username',
+  'realName',
+  'phone',
+  'email',
+  'avatar',
+  'role',
+  'voiceNotificationEnabled',
+] as const
 
 export const useUserStore = defineStore('user', () => {
   const token = ref<string>(localStorage.getItem('token') || '')
@@ -17,9 +27,21 @@ export const useUserStore = defineStore('user', () => {
     localStorage.getItem('voiceNotificationEnabled') === 'true'
   )
 
-  // 计算属性
   const isLoggedIn = computed(() => !!token.value)
   const isAdmin = computed(() => role.value === 1)
+  const displayName = computed(() => realName.value || username.value)
+
+  const persist = (): void => {
+    localStorage.setItem('token', token.value)
+    localStorage.setItem('userId', String(userId.value))
+    localStorage.setItem('username', username.value)
+    localStorage.setItem('realName', realName.value)
+    localStorage.setItem('phone', phone.value)
+    localStorage.setItem('email', email.value)
+    localStorage.setItem('avatar', avatar.value)
+    localStorage.setItem('role', String(role.value))
+    localStorage.setItem('voiceNotificationEnabled', String(voiceNotificationEnabled.value))
+  }
 
   const setUserInfo = (data: LoginResponse): void => {
     token.value = data.token || ''
@@ -30,18 +52,26 @@ export const useUserStore = defineStore('user', () => {
     email.value = data.email || ''
     avatar.value = data.avatar || ''
     role.value = data.role || 0
-    voiceNotificationEnabled.value = (data as any).voiceNotificationEnabled || false
+    voiceNotificationEnabled.value = data.voiceNotificationEnabled || false
+    persist()
+  }
 
-    // 保存到本地存储
-    localStorage.setItem('token', data.token || '')
-    localStorage.setItem('userId', String(data.userId || 0))
-    localStorage.setItem('username', data.username || '')
-    localStorage.setItem('realName', data.realName || '')
-    localStorage.setItem('phone', data.phone || '')
-    localStorage.setItem('email', data.email || '')
-    localStorage.setItem('avatar', data.avatar || '')
-    localStorage.setItem('role', String(data.role || 0))
-    localStorage.setItem('voiceNotificationEnabled', String((data as any).voiceNotificationEnabled || false))
+  /**
+   * 用 /auth/user-info 返回的最新资料刷新本地缓存（保留 token）。
+   * 管理员改了角色或语音通知权限后，用户不用重新登录就能生效。
+   */
+  const updateProfile = (user: Partial<User>): void => {
+    if (user.id !== undefined) userId.value = user.id
+    if (user.username !== undefined) username.value = user.username || ''
+    if (user.realName !== undefined) realName.value = user.realName || ''
+    if (user.phone !== undefined) phone.value = user.phone || ''
+    if (user.email !== undefined) email.value = user.email || ''
+    if (user.avatar !== undefined) avatar.value = user.avatar || ''
+    if (user.role !== undefined) role.value = user.role || 0
+    if (user.voiceNotificationEnabled !== undefined) {
+      voiceNotificationEnabled.value = !!user.voiceNotificationEnabled
+    }
+    persist()
   }
 
   const clearUserInfo = (): void => {
@@ -54,16 +84,7 @@ export const useUserStore = defineStore('user', () => {
     avatar.value = ''
     role.value = 0
     voiceNotificationEnabled.value = false
-
-    localStorage.removeItem('token')
-    localStorage.removeItem('userId')
-    localStorage.removeItem('username')
-    localStorage.removeItem('realName')
-    localStorage.removeItem('phone')
-    localStorage.removeItem('email')
-    localStorage.removeItem('avatar')
-    localStorage.removeItem('role')
-    localStorage.removeItem('voiceNotificationEnabled')
+    STORAGE_KEYS.forEach(key => localStorage.removeItem(key))
   }
 
   return {
@@ -78,7 +99,9 @@ export const useUserStore = defineStore('user', () => {
     voiceNotificationEnabled,
     isLoggedIn,
     isAdmin,
+    displayName,
     setUserInfo,
+    updateProfile,
     clearUserInfo,
   }
 })

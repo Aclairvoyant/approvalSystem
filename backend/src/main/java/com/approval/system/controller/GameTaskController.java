@@ -124,7 +124,7 @@ public class GameTaskController {
     public ApiResponse<Void> completeTask(
             @AuthenticationPrincipal Long userId,
             @PathVariable Long recordId,
-            @RequestBody(required = false) TaskCompleteRequest request) {
+            @Valid @RequestBody(required = false) TaskCompleteRequest request) {
         log.info("完成任务: userId={}, recordId={}", userId, recordId);
         String completionNote = request != null ? request.getCompletionNote() : null;
         gameTaskRecordService.completeTask(recordId, userId, completionNote);

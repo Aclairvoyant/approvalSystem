@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { gameWebSocket, MessageType, type GameMessage } from '@/services/websocket'
-import { gameApi } from '@/services/api'
+import { gameApi, gameTaskApi } from '@/services/api'
 import { useUserStore } from './user'
 import { showToast } from 'vant'
 
@@ -68,6 +68,10 @@ export const useGameStore = defineStore('game', () => {
   const errorMessage = ref<string | null>(null)
   const gameHistory = ref<GameInfo[]>([])
 
+  // 每次进入 / 离开房间都会递增，用来丢弃已经离开的房间迟到的响应
+  let roomToken = 0
+  let diceTimeout: ReturnType<typeof setTimeout> | null = null
+
   // 计算属性
   const isMyTurn = computed(() => {
     if (!currentGame.value || !userStore.userId) return false
@@ -130,22 +134,21 @@ export const useGameStore = defineStore('game', () => {
       throw new Error('未登录')
     }
 
+    gameWebSocket.setCallbacks({
+      onConnectionChange: (connected) => {
+        isConnected.value = connected
+        // 断线期间发出的掷骰子请求不会有回应，避免按钮一直转圈
+        if (!connected) clearDiceRolling()
+      },
+      onError: (error) => {
+        errorMessage.value = error.message
+        showToast({ type: 'fail', message: error.message })
+      },
+      onMessage: handleMessage
+    })
+
     try {
-      await gameWebSocket.connect(userStore.token, {
-        onConnected: () => {
-          isConnected.value = true
-          console.log('游戏WebSocket已连接')
-        },
-        onDisconnected: () => {
-          isConnected.value = false
-          console.log('游戏WebSocket已断开')
-        },
-        onError: (error) => {
-          errorMessage.value = error.message
-          showToast({ type: 'fail', message: error.message })
-        },
-        onMessage: handleMessage
-      })
+      await gameWebSocket.connect()
     } catch (error: any) {
       errorMessage.value = error.message
       throw error
@@ -156,11 +159,25 @@ export const useGameStore = defineStore('game', () => {
    * 断开WebSocket
    */
   function disconnectWebSocket(): void {
+    leaveGameRoom()
     gameWebSocket.disconnect()
     isConnected.value = false
+  }
+
+  function clearDiceRolling(): void {
+    isDiceRolling.value = false
+    if (diceTimeout) {
+      clearTimeout(diceTimeout)
+      diceTimeout = null
+    }
+  }
+
+  function resetRoomState(): void {
     currentGame.value = null
     diceResult.value = null
     triggeredTask.value = null
+    errorMessage.value = null
+    clearDiceRolling()
   }
 
   /**
@@ -218,7 +235,10 @@ export const useGameStore = defineStore('game', () => {
       if (message.senderId === userStore.userId) {
         diceResult.value = message.data.diceResult
       }
-      isDiceRolling.value = false
+      clearDiceRolling()
+      if (currentGame.value) {
+        currentGame.value.lastDiceResult = message.data.diceResult
+      }
       showToast({
         message: `${message.senderName || '玩家'}掷出了 ${message.data.diceResult}`,
         position: 'top'
@@ -248,7 +268,7 @@ export const useGameStore = defineStore('game', () => {
       currentGame.value.currentTurn = message.data.currentTurn
       // 重置骰子状态，新回合需要重新掷骰子
       diceResult.value = null
-      isDiceRolling.value = false
+      clearDiceRolling()
       if (isMyTurn.value) {
         showToast({ message: '轮到你了！', position: 'top' })
       }
@@ -261,9 +281,21 @@ export const useGameStore = defineStore('game', () => {
       type: 'success',
       position: 'top'
     })
-    // 重新获取游戏详情
+    // 重新获取游戏详情（拿到对方信息和开局状态）
     if (currentGame.value) {
-      fetchGameDetail(currentGame.value.id)
+      void refreshCurrentGame()
+    }
+  }
+
+  async function refreshCurrentGame(): Promise<void> {
+    const gameId = currentGame.value?.id
+    if (!gameId) return
+    const token = roomToken
+    try {
+      const game = await gameApi.getGameDetail(gameId)
+      if (token === roomToken) currentGame.value = game as GameInfo
+    } catch {
+      // 只是补充刷新，失败时保留当前状态
     }
   }
 
@@ -293,20 +325,23 @@ export const useGameStore = defineStore('game', () => {
   }
 
   function handleGameEnded(message: GameMessage): void {
-    if (currentGame.value && message.data) {
-      currentGame.value.gameStatus = GameStatus.FINISHED
-      currentGame.value.winnerId = message.data.winnerId
+    if (!currentGame.value) return
+    const winnerId: number | null = message.data?.winnerId ?? null
+    currentGame.value.gameStatus = GameStatus.FINISHED
+    currentGame.value.winnerId = winnerId
+    triggeredTask.value = null
+    clearDiceRolling()
 
-      const isWin = message.data.winnerId === userStore.userId
-      showToast({
-        message: isWin ? '恭喜你赢了！' : `${message.data.winnerName}获胜`,
-        type: isWin ? 'success' : 'text',
-        duration: 3000
-      })
-    }
+    let text = '对局已结束'
+    if (winnerId && winnerId === userStore.userId) text = '恭喜你赢了！'
+    else if (winnerId) text = `${message.data?.winnerName || '对方'}获胜`
+    showToast({ message: text, type: winnerId === userStore.userId ? 'success' : 'text', duration: 3000 })
   }
 
   function handleError(message: GameMessage): void {
+    // 错误会广播给房间里的两个人，只提示发起操作的那一方
+    if (message.senderId && message.senderId !== userStore.userId) return
+    clearDiceRolling()
     if (message.data?.error) {
       errorMessage.value = message.data.error
       showToast({ type: 'fail', message: message.data.error })
@@ -376,26 +411,54 @@ export const useGameStore = defineStore('game', () => {
    * 进入游戏房间（连接WebSocket并订阅）
    */
   async function enterGameRoom(gameId: number): Promise<void> {
-    // 先获取游戏详情
-    await fetchGameDetail(gameId)
+    const token = ++roomToken
+    resetRoomState()
 
-    // 连接WebSocket
-    if (!isConnected.value) {
+    const game = await gameApi.getGameDetail(gameId)
+    if (token !== roomToken) return
+    currentGame.value = game as GameInfo
+
+    try {
       await connectWebSocket()
+    } catch {
+      // 连接会在后台自动重试，连上后自动订阅；房间照常显示，状态栏提示正在重连
     }
+    if (token !== roomToken) return
 
-    // 订阅游戏房间
     gameWebSocket.subscribeToGame(gameId)
+    // 订阅之前对方可能已经加入，再拉一次详情补上
+    await refreshCurrentGame()
+    await restorePendingTask(gameId, token)
+  }
+
+  /** 刷新页面或断线重连后，把还没处理完的任务弹窗恢复出来 */
+  async function restorePendingTask(gameId: number, token: number): Promise<void> {
+    try {
+      const record = await gameTaskApi.getCurrentTask(gameId)
+      if (!record || token !== roomToken) return
+      const task = await gameTaskApi.getTaskById(record.taskId)
+      if (token !== roomToken) return
+      triggeredTask.value = {
+        taskId: record.taskId,
+        recordId: record.id,
+        title: task?.title || '任务',
+        description: task?.description || task?.requirement || '',
+        points: task?.points || 0,
+        triggerPlayerId: record.triggerPlayerId,
+        executorPlayerId: record.executorPlayerId,
+      }
+    } catch {
+      // 恢复失败不影响对局
+    }
   }
 
   /**
    * 离开游戏房间
    */
   function leaveGameRoom(): void {
+    roomToken += 1
     gameWebSocket.unsubscribeFromGame()
-    currentGame.value = null
-    diceResult.value = null
-    triggeredTask.value = null
+    resetRoomState()
   }
 
   /**
@@ -407,9 +470,14 @@ export const useGameStore = defineStore('game', () => {
       return
     }
 
-    isDiceRolling.value = true
     diceResult.value = null
-    gameWebSocket.rollDice(currentGame.value.id)
+    if (!gameWebSocket.rollDice(currentGame.value.id)) {
+      showToast({ type: 'fail', message: '连接已断开，正在重连' })
+      return
+    }
+    isDiceRolling.value = true
+    // 服务端没有回应时不要让按钮一直转圈
+    diceTimeout = setTimeout(clearDiceRolling, 8000)
   }
 
   /**
@@ -421,24 +489,31 @@ export const useGameStore = defineStore('game', () => {
       return
     }
 
-    gameWebSocket.movePiece(currentGame.value.id, pieceIndex, diceResult.value)
+    if (!gameWebSocket.movePiece(currentGame.value.id, pieceIndex, diceResult.value)) {
+      showToast({ type: 'fail', message: '连接已断开，正在重连' })
+      return
+    }
     diceResult.value = null
   }
 
   /**
-   * 完成任务
+   * 完成任务：弹窗等服务端广播 TASK_COMPLETED 后才关闭
    */
-  function completeTask(recordId: number, completionNote?: string): void {
-    if (!currentGame.value) return
-    gameWebSocket.completeTask(currentGame.value.id, recordId, completionNote)
+  function completeTask(recordId: number, completionNote?: string): boolean {
+    if (!currentGame.value) return false
+    const sent = gameWebSocket.completeTask(currentGame.value.id, recordId, completionNote)
+    if (!sent) showToast({ type: 'fail', message: '连接已断开，正在重连' })
+    return sent
   }
 
   /**
    * 放弃任务
    */
-  function abandonTask(recordId: number): void {
-    if (!currentGame.value) return
-    gameWebSocket.abandonTask(currentGame.value.id, recordId)
+  function abandonTask(recordId: number): boolean {
+    if (!currentGame.value) return false
+    const sent = gameWebSocket.abandonTask(currentGame.value.id, recordId)
+    if (!sent) showToast({ type: 'fail', message: '连接已断开，正在重连' })
+    return sent
   }
 
   /**
@@ -462,13 +537,16 @@ export const useGameStore = defineStore('game', () => {
   /**
    * 获取游戏历史
    */
+  let historyRequest = 0
   async function fetchGameHistory(status?: number): Promise<void> {
+    // 切换筛选时只采用最后一次请求的结果
+    const id = ++historyRequest
     isLoading.value = true
     try {
       const response: any = await gameApi.getUserGames(status)
-      gameHistory.value = response?.records || []
+      if (id === historyRequest) gameHistory.value = response?.records || []
     } finally {
-      isLoading.value = false
+      if (id === historyRequest) isLoading.value = false
     }
   }
 

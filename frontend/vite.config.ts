@@ -30,6 +30,11 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
       },
+      // 旧数据里的头像是后端本地存储的 /uploads/... 相对路径
+      '/uploads': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
     },
   },
   build: {

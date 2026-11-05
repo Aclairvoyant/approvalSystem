@@ -1,11 +1,12 @@
 package com.approval.system.service.impl;
 
+import com.approval.system.common.exception.BusinessException;
+import com.approval.system.common.enums.UserStatusEnum;
 import com.approval.system.dto.UserUpdateRequest;
 import com.approval.system.entity.User;
 import com.approval.system.mapper.UserMapper;
 import com.approval.system.service.IUserService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
@@ -27,13 +28,13 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         // 检查用户名是否已存在
         User existingUser = findByUsername(username);
         if (existingUser != null) {
-            throw new RuntimeException("用户名已存在");
+            throw BusinessException.conflict("用户名已存在");
         }
 
         // 检查手机号是否已存在
         User existingPhone = findByPhone(phone);
         if (existingPhone != null) {
-            throw new RuntimeException("手机号已被注册");
+            throw BusinessException.conflict("手机号已被注册");
         }
 
         User user = User.builder()
@@ -42,7 +43,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
                 .email(email)
                 .password(passwordEncoder.encode(password))
                 .realName(realName)
-                .status(1)
+                .status(UserStatusEnum.ENABLED.getCode())
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
@@ -55,15 +56,16 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     public User login(String username, String password) {
         User user = findByUsername(username);
         if (user == null) {
-            throw new RuntimeException("用户不存在");
+            throw BusinessException.notFound("用户不存在");
         }
 
         if (!passwordEncoder.matches(password, user.getPassword())) {
-            throw new RuntimeException("密码错误");
+            throw BusinessException.badRequest("密码错误");
         }
 
-        if (user.getStatus() == 0) {
-            throw new RuntimeException("用户已被禁用");
+        // 与 JWT 过滤器保持一致：只有启用状态（1）的账号可以登录
+        if (!UserStatusEnum.ENABLED.is(user.getStatus())) {
+            throw BusinessException.badRequest("用户已被禁用");
         }
 
         return user;
@@ -108,7 +110,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     public boolean updateUserInfo(Long id, String realName, String email, String avatar) {
         User user = this.getById(id);
         if (user == null) {
-            throw new RuntimeException("用户不存在");
+            throw BusinessException.notFound("用户不存在");
         }
 
         user.setRealName(realName);
@@ -123,14 +125,14 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     public boolean updateUserProfile(Long id, UserUpdateRequest request) {
         User user = this.getById(id);
         if (user == null) {
-            throw new RuntimeException("用户不存在");
+            throw BusinessException.notFound("用户不存在");
         }
 
         // 检查手机号是否被其他用户使用
         if (request.getPhone() != null && !request.getPhone().equals(user.getPhone())) {
             User existingPhone = findByPhone(request.getPhone());
             if (existingPhone != null && !existingPhone.getId().equals(id)) {
-                throw new RuntimeException("手机号已被其他用户使用");
+                throw BusinessException.conflict("手机号已被其他用户使用");
             }
             user.setPhone(request.getPhone());
         }
@@ -150,15 +152,15 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     public boolean changePassword(Long id, String oldPassword, String newPassword) {
         User user = this.getById(id);
         if (user == null) {
-            throw new RuntimeException("用户不存在");
+            throw BusinessException.notFound("用户不存在");
         }
 
         if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
-            throw new RuntimeException("原密码错误");
+            throw BusinessException.badRequest("原密码错误");
         }
 
         if (newPassword.length() < 6) {
-            throw new RuntimeException("新密码长度至少6位");
+            throw BusinessException.badRequest("新密码长度至少6位");
         }
 
         user.setPassword(passwordEncoder.encode(newPassword));
@@ -170,7 +172,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     public boolean updateAvatar(Long id, String avatarUrl) {
         User user = this.getById(id);
         if (user == null) {
-            throw new RuntimeException("用户不存在");
+            throw BusinessException.notFound("用户不存在");
         }
 
         user.setAvatar(avatarUrl);
@@ -198,17 +200,16 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     public boolean updateEmail(Long id, String email) {
         User user = this.getById(id);
         if (user == null) {
-            throw new RuntimeException("用户不存在");
+            throw BusinessException.notFound("用户不存在");
         }
 
         // 检查邮箱是否已被使用
-        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("email", email);
-        queryWrapper.ne("id", id);
-        User existingUser = this.getOne(queryWrapper);
+        User existingUser = this.getOne(new LambdaQueryWrapper<User>()
+                .eq(User::getEmail, email)
+                .ne(User::getId, id));
 
         if (existingUser != null) {
-            throw new RuntimeException("该邮箱已被使用");
+            throw BusinessException.conflict("该邮箱已被使用");
         }
 
         user.setEmail(email);

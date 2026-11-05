@@ -1,0 +1,12 @@
+{
+  "id": "fix-mobile-voice-recording",
+  "title": "修复手机端语音申请录音不可用",
+  "status": "completed",
+  "complexity": "M",
+  "risk": "medium",
+  "domain": "frontend",
+  "currentPhase": "completed",
+  "nextAction": "已按用户要求跳过外部 review，完成本地验证并归档",
+  "createdAt": "2026-06-10T02:31:09Z",
+  "branch": "codex/voice-message-approval"
+}

@@ -1,454 +1,222 @@
 <template>
   <div class="approvals-page">
-    <!-- 顶部导航栏 -->
-    <van-nav-bar title="待审批" fixed placeholder>
-      <template #right>
-        <van-icon name="filter-o" size="20" @click="showFilter = true" />
-      </template>
-    </van-nav-bar>
-
-    <!-- 下拉刷新 -->
-    <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
-      <!-- 空状态 -->
-      <van-empty
-        v-if="!loading && approvals.length === 0"
-        image="search"
-        description="暂无待审批申请"
+    <header class="page-head">
+      <ApplicationsSwitch current="approvals" />
+      <van-search
+        v-model="keyword"
+        class="search"
+        placeholder="按标题搜索"
+        shape="round"
+        :clearable="true"
+        @search="reset"
+        @clear="onClear"
       />
+    </header>
 
-      <!-- 审批列表 -->
+    <van-pull-refresh v-model="refreshing" class="m-page" @refresh="refresh">
       <van-list
-        v-else
         v-model:loading="loading"
+        v-model:error="error"
         :finished="finished"
-        finished-text="没有更多了"
-        @load="onLoad"
+        :finished-text="list.length ? '没有更多了' : ''"
+        error-text="加载失败，点击重试"
+        @load="load"
       >
-        <van-swipe-cell v-for="app in approvals" :key="app.id">
-          <van-cell-group inset class="approval-card" @click="goToDetail(app.id)">
-            <div class="card-header">
-              <div class="card-title">
-                <van-icon :name="app.appType === 2 ? 'volume-o' : 'description'" color="#4f46e5" />
-                <span>{{ app.title || (app.appType === 2 ? '语音申请' : '') }}</span>
-              </div>
-              <van-tag type="warning" size="medium">待审批</van-tag>
-            </div>
+        <van-empty
+          v-if="finished && !error && list.length === 0"
+          class="m-empty"
+          :description="keyword ? '没有匹配的申请' : '没有等你审批的申请'"
+        />
 
-            <div class="card-body">
-              <div class="info-row">
-                <van-icon name="user-o" size="14" />
-                <span class="label">申请人：</span>
-                <span class="value">{{ app.applicantName || app.applicantUsername }}</span>
-              </div>
-              <div class="info-row description">
-                <van-icon :name="app.appType === 2 ? 'volume-o' : 'notes-o'" size="14" />
-                <span class="label">说明：</span>
-                <span class="value">{{ app.description || (app.appType === 2 ? '语音申请，点击详情播放' : '无') }}</span>
-              </div>
-              <div class="info-row">
-                <van-icon name="clock-o" size="14" />
-                <span class="label">申请时间：</span>
-                <span class="value">{{ formatDate(app.createdAt) }}</span>
-              </div>
+        <article v-for="app in list" :key="app.id" class="m-card approval-card" @click="goToDetail(app.id)">
+          <div class="card-head">
+            <h3 class="m-title">
+              <van-icon v-if="app.appType === AppType.VOICE" name="volume-o" class="voice-icon" />
+              {{ app.title || '语音申请' }}
+            </h3>
+          </div>
+          <p class="card-desc">
+            {{ app.description || (app.appType === AppType.VOICE ? '语音申请，进入详情收听' : '没有填写说明') }}
+          </p>
+          <div class="card-foot">
+            <div class="m-meta">
+              <span>{{ app.applicantName || '对方' }}</span>
+              <span>{{ relativeTime(app.createdAt) }}</span>
             </div>
-
-            <div class="card-footer">
-              <van-button
-                size="small"
-                type="success"
-                icon="success"
-                @click.stop="handleQuickApprove(app)"
-              >
-                通过
-              </van-button>
-              <van-button
-                size="small"
-                type="danger"
-                icon="cross"
-                @click.stop="handleQuickReject(app)"
-              >
-                拒绝
-              </van-button>
+            <div class="card-actions">
+              <van-button size="small" plain @click.stop="openDecision(app, 'reject')">驳回</van-button>
+              <van-button size="small" type="primary" @click.stop="openDecision(app, 'approve')">通过</van-button>
             </div>
-          </van-cell-group>
-
-          <!-- 左滑操作按钮 -->
-          <template #right>
-            <van-button
-              square
-              type="success"
-              text="通过"
-              class="swipe-btn"
-              @click="handleQuickApprove(app)"
-            />
-            <van-button
-              square
-              type="danger"
-              text="拒绝"
-              class="swipe-btn"
-              @click="handleQuickReject(app)"
-            />
-          </template>
-        </van-swipe-cell>
+          </div>
+        </article>
       </van-list>
     </van-pull-refresh>
 
-    <!-- 审批确认弹窗 -->
+    <!-- before-close：接口失败时弹窗保持打开，填写的意见不会丢 -->
     <van-dialog
-      v-model:show="showApproveDialog"
-      title="确认通过"
+      v-model:show="showDecision"
+      :title="decision === 'approve' ? '通过申请' : '驳回申请'"
       show-cancel-button
-      @confirm="confirmApprove"
+      :confirm-button-text="decision === 'approve' ? '通过' : '驳回'"
+      :confirm-button-color="decision === 'approve' ? 'var(--accent)' : 'var(--danger)'"
+      :before-close="beforeDecisionClose"
     >
+      <p v-if="currentApp" class="dialog-subject">{{ currentApp.title || '语音申请' }}</p>
       <van-field
-        v-model="approvalDetail"
+        v-model="comment"
         rows="3"
         autosize
         type="textarea"
-        placeholder="请输入审批意见（选填）"
+        maxlength="500"
+        :placeholder="decision === 'approve' ? '审批意见（选填）' : '驳回原因（选填）'"
         class="dialog-input"
       />
     </van-dialog>
-
-    <!-- 拒绝确认弹窗 -->
-    <van-dialog
-      v-model:show="showRejectDialog"
-      title="确认拒绝"
-      show-cancel-button
-      @confirm="confirmReject"
-    >
-      <van-field
-        v-model="rejectDetail"
-        rows="3"
-        autosize
-        type="textarea"
-        placeholder="请输入拒绝原因"
-        class="dialog-input"
-      />
-    </van-dialog>
-
-    <!-- 筛选弹窗 -->
-    <van-action-sheet
-      v-model:show="showFilter"
-      title="筛选条件"
-    >
-      <div class="filter-content">
-        <van-cell-group inset>
-          <van-field
-            v-model="filterForm.keyword"
-            label="关键词"
-            placeholder="搜索标题或申请人"
-            clearable
-          />
-        </van-cell-group>
-        <div class="filter-actions">
-          <van-button round block type="primary" @click="applyFilter">
-            应用筛选
-          </van-button>
-          <van-button round block @click="resetFilter" style="margin-top: 12px;">
-            重置
-          </van-button>
-        </div>
-      </div>
-    </van-action-sheet>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { showSuccessToast, showFailToast, showLoadingToast, closeToast } from 'vant'
-import { applicationAPI } from '@/services/api'
-
-interface Application {
-  id: number
-  title: string
-  description: string
-  appType?: number
-  applicantId: number
-  applicantName?: string
-  applicantUsername?: string
-  status: number
-  createdAt: string
-}
+import { showFailToast, showSuccessToast } from 'vant'
+import { applicationAPI, type Application } from '@/services/api'
+import { usePagedList } from '@/composables/usePagedList'
+import { relativeTime } from '@/utils/format'
+import { AppType } from '@/utils/status'
+import ApplicationsSwitch from '@/components/application/ApplicationsSwitch.vue'
 
 const router = useRouter()
+const keyword = ref('')
 
-// 列表状态
-const approvals = ref<Application[]>([])
-const loading = ref(false)
-const finished = ref(false)
-const refreshing = ref(false)
-const pageNum = ref(1)
-const pageSize = 10
+const { list, loading, finished, error, refreshing, load, reset, refresh } = usePagedList<Application>(
+  (pageNum, pageSize) => applicationAPI.getPendingApplications({
+    pageNum,
+    pageSize,
+    keyword: keyword.value.trim() || undefined,
+  })
+)
 
-// 弹窗状态
-const showApproveDialog = ref(false)
-const showRejectDialog = ref(false)
-const showFilter = ref(false)
-
-// 表单数据
+const showDecision = ref(false)
+const decision = ref<'approve' | 'reject'>('approve')
 const currentApp = ref<Application | null>(null)
-const approvalDetail = ref('')
-const rejectDetail = ref('')
+const comment = ref('')
 
-// 筛选条件
-const filterForm = reactive({
-  keyword: '',
-})
-
-onMounted(() => {
-  onLoad()
-})
-
-// 加载数据
-const onLoad = async (): Promise<void> => {
-  try {
-    const response = await applicationAPI.getPendingApplications({
-      pageNum: pageNum.value,
-      pageSize,
-      keyword: filterForm.keyword || undefined,
-    })
-
-    const records = response.records || response || []
-
-    if (pageNum.value === 1) {
-      approvals.value = records
-    } else {
-      approvals.value.push(...records)
-    }
-
-    loading.value = false
-
-    if (records.length < pageSize) {
-      finished.value = true
-    } else {
-      pageNum.value++
-    }
-  } catch (error: any) {
-    loading.value = false
-    showFailToast(error.message || '加载失败')
-  }
-}
-
-// 下拉刷新
-const onRefresh = async (): Promise<void> => {
-  pageNum.value = 1
-  finished.value = false
-  await onLoad()
-  refreshing.value = false
-  showSuccessToast('刷新成功')
-}
-
-// 跳转详情
 const goToDetail = (id: number): void => {
   router.push(`/mobile/application-detail/${id}`)
 }
 
-// 快速通过
-const handleQuickApprove = (app: Application): void => {
+const onClear = (): void => {
+  keyword.value = ''
+  reset()
+}
+
+const openDecision = (app: Application, type: 'approve' | 'reject'): void => {
   currentApp.value = app
-  approvalDetail.value = ''
-  showApproveDialog.value = true
+  decision.value = type
+  comment.value = ''
+  showDecision.value = true
 }
 
-// 快速拒绝
-const handleQuickReject = (app: Application): void => {
-  currentApp.value = app
-  rejectDetail.value = ''
-  showRejectDialog.value = true
-}
+const beforeDecisionClose = async (action: string): Promise<boolean> => {
+  if (action !== 'confirm' || !currentApp.value) return true
 
-// 确认通过
-const confirmApprove = async (): Promise<void> => {
-  if (!currentApp.value) return
-
-  showLoadingToast({ message: '处理中...', forbidClick: true })
-
+  const payload = { approvalDetail: comment.value.trim() || undefined }
   try {
-    await applicationAPI.approveApplication(currentApp.value.id, {
-      approvalDetail: approvalDetail.value || undefined,
-    })
-    closeToast()
-    showSuccessToast('审批通过')
-
-    // 从列表中移除
-    approvals.value = approvals.value.filter(a => a.id !== currentApp.value!.id)
-  } catch (error: any) {
-    closeToast()
-    showFailToast(error.message || '操作失败')
+    if (decision.value === 'approve') {
+      await applicationAPI.approveApplication(currentApp.value.id, payload)
+      showSuccessToast('已通过')
+    } else {
+      await applicationAPI.rejectApplication(currentApp.value.id, payload)
+      showSuccessToast('已驳回')
+    }
+    // 处理掉一条后从第一页重新拉，避免分页偏移漏掉后面的申请
+    refresh()
+    return true
+  } catch (e: any) {
+    showFailToast(e.message || '操作失败')
+    return false
   }
-}
-
-// 确认拒绝
-const confirmReject = async (): Promise<void> => {
-  if (!currentApp.value) return
-
-  showLoadingToast({ message: '处理中...', forbidClick: true })
-
-  try {
-    await applicationAPI.rejectApplication(currentApp.value.id, {
-      approvalDetail: rejectDetail.value || undefined,
-    })
-    closeToast()
-    showSuccessToast('已拒绝')
-
-    // 从列表中移除
-    approvals.value = approvals.value.filter(a => a.id !== currentApp.value!.id)
-  } catch (error: any) {
-    closeToast()
-    showFailToast(error.message || '操作失败')
-  }
-}
-
-// 应用筛选
-const applyFilter = (): void => {
-  showFilter.value = false
-  pageNum.value = 1
-  finished.value = false
-  approvals.value = []
-  onLoad()
-}
-
-// 重置筛选
-const resetFilter = (): void => {
-  filterForm.keyword = ''
-  applyFilter()
-}
-
-// 格式化日期
-const formatDate = (date: string): string => {
-  if (!date) return '-'
-  const d = new Date(date)
-  const now = new Date()
-  const diff = now.getTime() - d.getTime()
-
-  // 小于1分钟
-  if (diff < 60000) {
-    return '刚刚'
-  }
-  // 小于1小时
-  if (diff < 3600000) {
-    return `${Math.floor(diff / 60000)}分钟前`
-  }
-  // 小于24小时
-  if (diff < 86400000) {
-    return `${Math.floor(diff / 3600000)}小时前`
-  }
-  // 小于7天
-  if (diff < 604800000) {
-    return `${Math.floor(diff / 86400000)}天前`
-  }
-
-  return d.toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
 }
 </script>
 
 <style scoped>
 .approvals-page {
-  min-height: 100vh;
-  background: #f5f5f5;
-  padding-bottom: 60px;
+  min-height: 100%;
+  background: var(--bg);
+}
+
+.page-head {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: max(10px, env(safe-area-inset-top)) 12px 0;
+  background: var(--bg);
+}
+
+.search {
+  margin-top: 8px;
+  padding: 0 0 4px;
+  background: transparent;
+}
+
+.search :deep(.van-search__content) {
+  background: var(--surface);
 }
 
 .approval-card {
-  margin: 12px 16px;
-  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.approval-card + .approval-card {
+  margin-top: 8px;
+}
+
+.voice-icon {
+  margin-right: 2px;
+  color: var(--ink-2);
+  vertical-align: -2px;
+}
+
+.card-desc {
+  display: -webkit-box;
+  margin-top: 4px;
   overflow: hidden;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 16px 12px;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.card-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  color: #1a1a1a;
-}
-
-.card-body {
-  padding: 12px 16px;
-}
-
-.info-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
+  color: var(--ink-2);
   font-size: 14px;
-  color: #666;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
-.info-row:last-child {
-  margin-bottom: 0;
-}
-
-.info-row .label {
-  color: #999;
-}
-
-.info-row .value {
-  color: #333;
-}
-
-.info-row.description .value {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 200px;
-}
-
-.card-footer {
+.card-foot {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
-  padding: 12px 16px;
-  border-top: 1px solid #f0f0f0;
-  background: #fafafa;
+  margin-top: 12px;
 }
 
-.swipe-btn {
-  height: 100%;
+.card-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.card-actions .van-button {
+  min-width: 64px;
+}
+
+.dialog-subject {
+  padding: 8px 24px 0;
+  color: var(--ink-2);
+  font-size: 14px;
+  text-align: center;
 }
 
 .dialog-input {
-  margin: 16px;
-  background: #f7f8fa;
-  border-radius: 8px;
-}
-
-.filter-content {
-  padding: 16px;
-}
-
-.filter-actions {
-  margin-top: 24px;
-}
-
-/* 下拉刷新样式 */
-:deep(.van-pull-refresh) {
-  min-height: calc(100vh - 46px);
-}
-
-/* 空状态居中 */
-:deep(.van-empty) {
-  padding-top: 100px;
-}
-
-/* 滑动单元格样式 */
-:deep(.van-swipe-cell__right) {
-  display: flex;
+  margin: 12px 16px 4px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  width: auto;
 }
 </style>

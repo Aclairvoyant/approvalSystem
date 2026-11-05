@@ -333,6 +333,65 @@ CREATE TABLE gobang_ai_reviews (
   INDEX idx_gobang_ai_review_created_at (created_at)
 ) COMMENT='Gobang saved AI reviews';
 
+-- 上海麻将（百搭 / 敲麻）房间与动作日志
+CREATE TABLE mahjong_games (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT 'Mahjong room ID',
+  game_code VARCHAR(20) NOT NULL UNIQUE COMMENT '6 位房间号',
+  owner_id BIGINT NOT NULL COMMENT '房主，固定坐 0 号位',
+  mode TINYINT NOT NULL COMMENT '1=百搭,2=敲麻',
+  seat_count TINYINT NOT NULL COMMENT '座位数 2-4',
+  seat0_user_id BIGINT COMMENT '0 号位真人玩家（房主）',
+  seat1_user_id BIGINT COMMENT '1 号位真人玩家',
+  seat2_user_id BIGINT COMMENT '2 号位真人玩家',
+  seat3_user_id BIGINT COMMENT '3 号位真人玩家',
+  bot_mask TINYINT NOT NULL DEFAULT 0 COMMENT '电脑座位位图：第 i 位为 1 表示 i 号位是电脑',
+  invited_user_id BIGINT COMMENT '房主直接邀请的对象',
+  cap_points INT NOT NULL DEFAULT 128 COMMENT '每个付分人每局最多付多少分，0=不封顶',
+  game_status TINYINT NOT NULL DEFAULT 1 COMMENT '1=waiting,2=playing,3=round finished,4=cancelled',
+  round_no INT NOT NULL DEFAULT 0 COMMENT '已开到第几局',
+  dealer_seat TINYINT NOT NULL DEFAULT 0 COMMENT '庄家座位',
+  huang_count INT NOT NULL DEFAULT 0 COMMENT '下一局带的荒番数',
+  total_scores JSON COMMENT '每个座位的累计得分',
+  state_data JSON COMMENT '完整牌局状态（含牌墙和暗牌，只能在服务端使用）',
+  state_version INT NOT NULL DEFAULT 0 COMMENT '状态版本，每次变化 +1',
+  action_deadline DATETIME(3) COMMENT '下一次自动行动或超时代打的时间',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Created time',
+  started_at DATETIME COMMENT 'First round started time',
+  ended_at DATETIME COMMENT 'Latest round ended time',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated time',
+  FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (seat0_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  FOREIGN KEY (seat1_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  FOREIGN KEY (seat2_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  FOREIGN KEY (seat3_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  FOREIGN KEY (invited_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_mahjong_owner (owner_id),
+  INDEX idx_mahjong_seat0 (seat0_user_id),
+  INDEX idx_mahjong_seat1 (seat1_user_id),
+  INDEX idx_mahjong_seat2 (seat2_user_id),
+  INDEX idx_mahjong_seat3 (seat3_user_id),
+  INDEX idx_mahjong_invited (invited_user_id),
+  INDEX idx_mahjong_status_deadline (game_status, action_deadline)
+) COMMENT='上海麻将房间表';
+
+CREATE TABLE mahjong_moves (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT 'Mahjong move ID',
+  game_id BIGINT NOT NULL COMMENT 'Mahjong room ID',
+  round_no INT NOT NULL COMMENT '第几局',
+  move_number INT NOT NULL COMMENT '房间内递增序号',
+  seat_index TINYINT NOT NULL COMMENT '座位',
+  player_id BIGINT COMMENT '真人玩家；电脑为 NULL',
+  action_type VARCHAR(16) NOT NULL COMMENT 'DRAW,FLOWER,DISCARD,QIAO,CHI,PONG,MING_GANG,JIA_GANG,AN_GANG,HU,DRAW_GAME,AUTO_ON,AUTO_OFF',
+  tile TINYINT COMMENT '牌编码',
+  move_data JSON COMMENT '附加信息',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Created time',
+  FOREIGN KEY (game_id) REFERENCES mahjong_games(id) ON DELETE CASCADE,
+  FOREIGN KEY (player_id) REFERENCES users(id) ON DELETE SET NULL,
+  UNIQUE KEY uk_mahjong_move_number (game_id, move_number),
+  INDEX idx_mahjong_moves_game_round (game_id, round_no),
+  INDEX idx_mahjong_moves_player (player_id)
+) COMMENT='上海麻将动作日志';
+
 -- 用户游戏统计表
 CREATE TABLE user_game_stats (
   id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '统计ID',

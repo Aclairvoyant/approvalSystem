@@ -1,86 +1,124 @@
 <template>
-  <div class="home-page">
+  <div class="m-page home-page">
     <header class="top-bar">
       <div>
-        <div class="hello">欢迎回来</div>
-        <h1>{{ userStore.realName || userStore.username }}</h1>
+        <p class="hello">{{ greeting }}</p>
+        <h1>{{ userStore.displayName }}</h1>
       </div>
-      <router-link class="partner-link" to="/mobile/relations">对象</router-link>
+      <router-link class="partner-link" to="/mobile/relations">我的对象</router-link>
     </header>
 
-    <section class="summary-grid">
+    <section class="summary m-card">
       <router-link to="/mobile/approvals" class="summary-item">
-        <span class="summary-value">{{ summary.pendingApprovalCount }}</span>
-        <span class="summary-label">待审批</span>
+        <span class="summary-value tabular">{{ summary.pendingApprovalCount }}</span>
+        <span class="summary-label">待我审批</span>
       </router-link>
       <router-link to="/mobile/daily" class="summary-item">
-        <span class="summary-value">{{ summary.todayDailyCount }}</span>
+        <span class="summary-value tabular">{{ summary.todayDailyCount }}</span>
         <span class="summary-label">今日事项</span>
       </router-link>
       <router-link to="/mobile/daily" class="summary-item">
-        <span class="summary-value">{{ summary.overdueDailyCount }}</span>
+        <span class="summary-value tabular" :class="{ 'is-overdue': summary.overdueDailyCount > 0 }">
+          {{ summary.overdueDailyCount }}
+        </span>
         <span class="summary-label">已逾期</span>
       </router-link>
       <router-link to="/mobile/events" class="summary-item">
-        <span class="summary-value">{{ eventCount }}</span>
+        <span class="summary-value tabular">{{ eventCount }}</span>
         <span class="summary-label">纪念日</span>
       </router-link>
     </section>
 
-    <section class="quick-actions">
-      <router-link to="/mobile/daily" class="action">
+    <nav class="shortcuts">
+      <router-link to="/mobile/applications?create=1" class="shortcut">
+        <van-icon name="add-o" />
+        <span>发起申请</span>
+      </router-link>
+      <router-link to="/mobile/daily" class="shortcut">
         <van-icon name="notes-o" />
         <span>记一件事</span>
       </router-link>
-      <router-link to="/mobile/applications" class="action">
-        <van-icon name="records-o" />
-        <span>发起申请</span>
-      </router-link>
-      <router-link to="/mobile/templates" class="action">
+      <router-link to="/mobile/templates" class="shortcut">
         <van-icon name="orders-o" />
         <span>申请模板</span>
       </router-link>
-      <router-link to="/mobile/events" class="action">
-        <van-icon name="underway-o" />
+      <router-link to="/mobile/events" class="shortcut">
+        <van-icon name="calendar-o" />
         <span>纪念日</span>
       </router-link>
+    </nav>
+
+    <section v-if="summary.pendingApprovals.length" class="m-section">
+      <div class="m-section-head">
+        <h2 class="m-section-title">等你审批</h2>
+        <router-link class="m-section-link" to="/mobile/approvals">全部</router-link>
+      </div>
+      <van-cell-group class="m-card list-card" :border="false">
+        <van-cell
+          v-for="app in summary.pendingApprovals.slice(0, 3)"
+          :key="app.id"
+          :title="app.title"
+          :label="`${app.applicantName || '对方'} · ${relativeTime(app.createdAt)}`"
+          is-link
+          :to="`/mobile/application-detail/${app.id}`"
+        />
+      </van-cell-group>
     </section>
 
-    <section class="panel">
-      <div class="panel-header">
-        <h2>今天要做</h2>
-        <router-link to="/mobile/daily">全部</router-link>
+    <section class="m-section">
+      <div class="m-section-head">
+        <h2 class="m-section-title">今天要做</h2>
+        <router-link class="m-section-link" to="/mobile/daily">全部</router-link>
       </div>
-      <van-empty v-if="!loading && summary.todayDailyItems.length === 0" description="今天没有待办" />
-      <van-cell
-        v-for="item in summary.todayDailyItems"
-        :key="item.id"
-        :title="item.title"
-        :label="item.content || typeText(item.itemType)"
-        is-link
-        to="/mobile/daily"
-      />
+      <van-cell-group class="m-card list-card" :border="false">
+        <van-cell
+          v-for="item in summary.overdueDailyItems"
+          :key="`overdue-${item.id}`"
+          :title="item.title"
+          :label="`已逾期 · 原定 ${item.targetDate || ''}`"
+          is-link
+          to="/mobile/daily"
+          class="overdue-cell"
+        />
+        <van-cell
+          v-for="item in summary.todayDailyItems"
+          :key="item.id"
+          :title="item.title"
+          :label="item.content || dailyTypeText(item.itemType)"
+          is-link
+          to="/mobile/daily"
+        />
+        <p
+          v-if="!loading && summary.todayDailyItems.length === 0 && summary.overdueDailyItems.length === 0"
+          class="list-empty"
+        >
+          今天没有待办
+        </p>
+      </van-cell-group>
     </section>
 
-    <section class="panel">
-      <div class="panel-header">
-        <h2>近期纪念日</h2>
-        <router-link to="/mobile/events">管理</router-link>
+    <section class="m-section">
+      <div class="m-section-head">
+        <h2 class="m-section-title">近期纪念日</h2>
+        <router-link class="m-section-link" to="/mobile/events">管理</router-link>
       </div>
-      <van-empty
-        v-if="!loading && summary.upcomingEvents.length === 0"
-        :description="eventCount > 0 ? '30天内没有纪念日' : '还没有纪念日'"
-      />
-      <van-cell
-        v-for="event in summary.upcomingEvents"
-        :key="event.id"
-        :title="event.title"
-        :label="event.eventDate"
-        is-link
-        to="/mobile/events"
-      >
-        <template #value>{{ daysText(event.eventDate, event.repeatType) }}</template>
-      </van-cell>
+      <van-cell-group class="m-card list-card" :border="false">
+        <van-cell
+          v-for="event in summary.upcomingEvents"
+          :key="event.id"
+          :title="event.title"
+          :label="event.eventDate"
+          is-link
+          to="/mobile/events"
+        >
+          <template #value>
+            <span class="days tabular">{{ daysText(event.eventDate, event.repeatType) }}</span>
+          </template>
+        </van-cell>
+        <p v-if="!loading && summary.upcomingEvents.length === 0" class="list-empty">
+          {{ eventCount > 0 ? '30 天内没有纪念日' : '还没有纪念日' }}
+        </p>
+      </van-cell-group>
     </section>
   </div>
 </template>
@@ -90,6 +128,8 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { showFailToast } from 'vant'
 import { reminderAPI, type ReminderSummary } from '@/services/api'
 import { useUserStore } from '@/store/modules/user'
+import { daysUntil, relativeTime } from '@/utils/format'
+import { dailyTypeText } from '@/utils/status'
 
 const userStore = useUserStore()
 const loading = ref(false)
@@ -106,6 +146,15 @@ const summary = reactive<ReminderSummary>({
 
 const eventCount = computed(() => summary.totalEventCount ?? summary.upcomingEventCount)
 
+const greeting = computed(() => {
+  const hour = new Date().getHours()
+  if (hour < 6) return '夜深了'
+  if (hour < 11) return '早上好'
+  if (hour < 14) return '中午好'
+  if (hour < 18) return '下午好'
+  return '晚上好'
+})
+
 onMounted(() => {
   loadSummary()
 })
@@ -121,140 +170,117 @@ async function loadSummary() {
   }
 }
 
-function typeText(type: number) {
-  return ({ 1: '待办', 2: '清单', 3: '约会', 4: '约定' } as Record<number, string>)[type] || '事项'
-}
-
 function daysText(date: string, repeatType: number) {
-  const today = new Date()
-  const base = new Date(date)
-  let next = base
-  if (repeatType === 1) {
-    next = new Date(today.getFullYear(), base.getMonth(), base.getDate())
-    if (next < new Date(today.getFullYear(), today.getMonth(), today.getDate())) {
-      next.setFullYear(next.getFullYear() + 1)
-    }
-  }
-  const diff = Math.ceil((next.getTime() - today.getTime()) / 86400000)
-  return diff <= 0 ? '今天' : `${diff}天`
+  const diff = daysUntil(date, repeatType)
+  if (diff === 0) return '今天'
+  if (diff === 1) return '明天'
+  return diff > 0 ? `${diff} 天后` : `${-diff} 天前`
 }
 </script>
 
 <style scoped>
 .home-page {
-  min-height: 100vh;
-  padding: 18px 14px 76px;
-  background: #f6f7f9;
+  padding-top: max(20px, env(safe-area-inset-top));
 }
 
 .top-bar {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.partner-link {
-  padding: 6px 13px;
-  border: 1px solid #d9dce3;
-  border-radius: 999px;
-  color: #4f46e5;
-  font-size: 13px;
-  text-decoration: none;
-  background: #fff;
+  padding: 0 4px 16px;
 }
 
 .hello {
-  color: #7b8190;
+  color: var(--ink-2);
   font-size: 13px;
 }
 
 h1 {
-  margin: 3px 0 0;
-  color: #1f2329;
+  margin-top: 2px;
+  color: var(--ink);
   font-size: 24px;
-  line-height: 1.2;
+  line-height: 1.25;
 }
 
-.summary-grid {
+.partner-link {
+  color: var(--accent);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.summary {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  margin-bottom: 14px;
-}
-
-.summary-item,
-.action {
-  text-decoration: none;
-  background: #fff;
-  border-radius: 8px;
-  color: #1f2329;
+  padding: 16px 0;
 }
 
 .summary-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 12px 4px;
+  gap: 4px;
+  text-decoration: none;
+}
+
+.summary-item + .summary-item {
+  border-left: 1px solid var(--rule);
 }
 
 .summary-value {
-  color: #4f46e5;
-  font-size: 20px;
-  font-weight: 700;
+  color: var(--ink);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.summary-value.is-overdue {
+  color: var(--danger);
 }
 
 .summary-label {
-  margin-top: 4px;
-  color: #7b8190;
-  font-size: 11px;
+  color: var(--ink-3);
+  font-size: 12px;
 }
 
-.quick-actions {
+.shortcuts {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  margin-bottom: 14px;
+  margin-top: 12px;
 }
 
-.action {
+.shortcut {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding: 12px 4px;
-  color: #3b3f4a;
+  padding: 10px 0;
+  color: var(--ink-2);
   font-size: 12px;
-}
-
-.action .van-icon {
-  color: #4f46e5;
-  font-size: 22px;
-}
-
-.panel {
-  overflow: hidden;
-  margin-bottom: 12px;
-  background: #fff;
-  border-radius: 8px;
-}
-
-.panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 14px 16px 4px;
-}
-
-.panel-header h2 {
-  margin: 0;
-  color: #1f2329;
-  font-size: 16px;
-}
-
-.panel-header a {
-  color: #4f46e5;
-  font-size: 13px;
   text-decoration: none;
+}
+
+.shortcut .van-icon {
+  color: var(--ink);
+  font-size: 24px;
+}
+
+.list-card {
+  overflow: hidden;
+}
+
+.overdue-cell :deep(.van-cell__label) {
+  color: var(--danger);
+}
+
+.days {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.list-empty {
+  padding: 20px 16px;
+  color: var(--ink-3);
+  font-size: 13px;
+  text-align: center;
 }
 </style>

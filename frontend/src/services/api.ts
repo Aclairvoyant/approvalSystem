@@ -1,5 +1,7 @@
 import http from './http'
 
+const VOICE_TIMEOUT = 120000
+
 // 从生成的类型中导出常用类型
 export interface User {
   id: number
@@ -30,11 +32,9 @@ export interface Application {
   remark?: string
   status: number
   rejectReason?: string
-  approvalDetail?: string
+  /** 后端按 applicant_id / approver_id 关联 users 表填充的显示名 */
   applicantName?: string
-  applicantUsername?: string
   approverName?: string
-  approverUsername?: string
   createdAt: string
   approvedAt?: string
   updatedAt?: string
@@ -293,12 +293,6 @@ export const applicationAPI = {
     formData.append('file', audio, 'voice.wav')
     return http.post<void>(`/applications/${id}/voice-audio`, formData)
   },
-  createVoiceApplication(approverId: number, audio: Blob) {
-    const formData = new FormData()
-    formData.append('approverId', String(approverId))
-    formData.append('file', audio, 'voice.wav')
-    return http.post<Application>('/applications/voice', formData)
-  },
   updateApplication(id: number, data: ApplicationCreateRequest) {
     return http.put<Application>(`/applications/${id}`, data)
   },
@@ -313,10 +307,14 @@ export const applicationAPI = {
     const formData = new FormData()
     formData.append('file', audio, 'voice.wav')
     formData.append('language', language)
-    return http.post<VoiceParseResult>('/applications/voice-parse', formData)
+    // 语音识别 + 大模型整理耗时较长，单独放宽超时
+    return http.post<VoiceParseResult>('/applications/voice-parse', formData, { timeout: VOICE_TIMEOUT })
   },
   transcribeVoiceApplication(id: number, language: 'auto' | 'zh' | 'en' = 'zh') {
-    return http.post<string>(`/applications/${id}/transcribe-voice`, null, { params: { language } })
+    return http.post<string>(`/applications/${id}/transcribe-voice`, null, {
+      params: { language },
+      timeout: VOICE_TIMEOUT,
+    })
   },
   getMyApplications(params: PaginationParams & { status?: number }) {
     return http.get<PageApplication>('/applications/my-applications', { params })
@@ -453,12 +451,13 @@ export const adminAPI = {
   },
   adminApproveApplication(applicationId: number, approvalDetail?: string) {
     return http.post<void>(`/admin/applications/${applicationId}/approve`, null, {
-      params: { approvalDetail }
+      // 空字符串改为不传，让后端使用默认文案
+      params: { approvalDetail: approvalDetail?.trim() || undefined }
     })
   },
   adminRejectApplication(applicationId: number, rejectReason?: string) {
     return http.post<void>(`/admin/applications/${applicationId}/reject`, null, {
-      params: { rejectReason }
+      params: { rejectReason: rejectReason?.trim() || undefined }
     })
   },
   getEmailSettings() {

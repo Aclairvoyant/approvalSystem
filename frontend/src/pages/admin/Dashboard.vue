@@ -1,92 +1,63 @@
 <template>
-  <div class="admin-page admin-page-narrow dashboard">
+  <div class="admin-page dashboard">
     <div class="admin-page-header">
       <div class="admin-page-heading">
-        <div class="admin-page-kicker">OVERVIEW</div>
         <h1 class="admin-page-title">仪表盘</h1>
-        <p class="admin-page-subtitle">集中查看申请流转、用户规模与常用后台入口。</p>
+        <p class="admin-page-subtitle">申请流转和用户规模的总览</p>
       </div>
       <div class="admin-page-actions">
         <a-button :loading="loading" @click="refreshStats">
           <template #icon><icon-refresh /></template>
-          刷新数据
+          刷新
         </a-button>
       </div>
     </div>
 
     <a-spin class="dashboard-spin" :loading="loading">
+      <router-link
+        v-if="stats.pendingApplications > 0"
+        class="admin-panel pending-banner"
+        :to="{ path: '/admin/applications', query: { status: '1' } }"
+      >
+        <span><b class="tabular">{{ stats.pendingApplications }}</b> 条申请等待审批</span>
+        <span class="pending-link">去处理 <icon-right /></span>
+      </router-link>
+
+      <h2 class="admin-section-title">申请</h2>
       <section class="admin-metric-grid">
-        <div class="admin-metric-card metric-pending">
-          <div class="admin-metric-icon">
-            <icon-clock-circle />
-          </div>
-          <div class="admin-metric-content">
-            <div class="admin-metric-label">待审批申请</div>
-            <div class="admin-metric-value">{{ stats.pendingApplications }}</div>
+        <div class="admin-metric-card">
+          <div class="admin-metric-label">待审批</div>
+          <div class="admin-metric-value" :class="{ 'is-pending': stats.pendingApplications > 0 }">
+            {{ stats.pendingApplications }}
           </div>
         </div>
-        <div class="admin-metric-card metric-approved">
-          <div class="admin-metric-icon">
-            <icon-check-circle />
-          </div>
-          <div class="admin-metric-content">
-            <div class="admin-metric-label">已批准申请</div>
-            <div class="admin-metric-value">{{ stats.approvedApplications }}</div>
-          </div>
+        <div class="admin-metric-card">
+          <div class="admin-metric-label">已通过</div>
+          <div class="admin-metric-value">{{ stats.approvedApplications }}</div>
+          <div v-if="approvalRate !== null" class="admin-metric-note">占已处理的 {{ approvalRate }}%</div>
         </div>
-        <div class="admin-metric-card metric-rejected">
-          <div class="admin-metric-icon">
-            <icon-close-circle />
-          </div>
-          <div class="admin-metric-content">
-            <div class="admin-metric-label">已驳回申请</div>
-            <div class="admin-metric-value">{{ stats.rejectedApplications }}</div>
-          </div>
+        <div class="admin-metric-card">
+          <div class="admin-metric-label">已驳回</div>
+          <div class="admin-metric-value">{{ stats.rejectedApplications }}</div>
         </div>
-        <div class="admin-metric-card metric-total">
-          <div class="admin-metric-icon">
-            <icon-file />
-          </div>
-          <div class="admin-metric-content">
-            <div class="admin-metric-label">总申请数</div>
-            <div class="admin-metric-value">{{ stats.totalApplications }}</div>
-          </div>
-        </div>
-        <div class="admin-metric-card metric-users">
-          <div class="admin-metric-icon">
-            <icon-user-group />
-          </div>
-          <div class="admin-metric-content">
-            <div class="admin-metric-label">总用户数</div>
-            <div class="admin-metric-value">{{ stats.totalUsers }}</div>
-          </div>
-        </div>
-        <div class="admin-metric-card metric-active">
-          <div class="admin-metric-icon">
-            <icon-user />
-          </div>
-          <div class="admin-metric-content">
-            <div class="admin-metric-label">活跃用户</div>
-            <div class="admin-metric-value">{{ stats.activeUsers }}</div>
-          </div>
+        <div class="admin-metric-card">
+          <div class="admin-metric-label">申请总数</div>
+          <div class="admin-metric-value">{{ stats.totalApplications }}</div>
         </div>
       </section>
 
-      <section class="admin-panel admin-panel-padded quick-actions">
-        <h2 class="admin-section-title">快捷操作</h2>
-        <div class="action-buttons">
-          <a-button type="primary" @click="$router.push('/admin/applications')">
-            <template #icon><icon-file /></template>
-            申请管理
-          </a-button>
-          <a-button type="primary" @click="$router.push('/admin/users')">
-            <template #icon><icon-user /></template>
-            用户管理
-          </a-button>
-          <a-button @click="$router.push('/admin/system')">
-            <template #icon><icon-settings /></template>
-            系统配置
-          </a-button>
+      <h2 class="admin-section-title">用户</h2>
+      <section class="admin-metric-grid">
+        <div class="admin-metric-card">
+          <div class="admin-metric-label">注册用户</div>
+          <div class="admin-metric-value">{{ stats.totalUsers }}</div>
+        </div>
+        <div class="admin-metric-card">
+          <div class="admin-metric-label">正常状态</div>
+          <div class="admin-metric-value">{{ stats.activeUsers }}</div>
+          <div v-if="stats.totalUsers > stats.activeUsers" class="admin-metric-note">
+            {{ stats.totalUsers - stats.activeUsers }} 个已禁用
+          </div>
         </div>
       </section>
     </a-spin>
@@ -94,19 +65,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Message } from '@arco-design/web-vue'
+import { IconRefresh, IconRight } from '@arco-design/web-vue/es/icon'
 import { adminAPI, type DashboardStats } from '@/services/api'
-import {
-  IconClockCircle,
-  IconCheckCircle,
-  IconCloseCircle,
-  IconFile,
-  IconUserGroup,
-  IconUser,
-  IconRefresh,
-  IconSettings
-} from '@arco-design/web-vue/es/icon'
 
 const stats = ref<DashboardStats>({
   pendingApplications: 0,
@@ -119,11 +81,15 @@ const stats = ref<DashboardStats>({
 
 const loading = ref(false)
 
+const approvalRate = computed(() => {
+  const decided = stats.value.approvedApplications + stats.value.rejectedApplications
+  return decided > 0 ? Math.round((stats.value.approvedApplications / decided) * 100) : null
+})
+
 const fetchStats = async (): Promise<boolean> => {
   loading.value = true
   try {
-    const data = await adminAPI.getDashboardStats()
-    stats.value = data
+    stats.value = await adminAPI.getDashboardStats()
     return true
   } catch (error: any) {
     Message.error(error.message || '获取统计数据失败')
@@ -134,15 +100,12 @@ const fetchStats = async (): Promise<boolean> => {
 }
 
 const refreshStats = async (): Promise<void> => {
-  const success = await fetchStats()
-  if (success) {
-    Message.success('数据已刷新')
+  if (await fetchStats()) {
+    Message.success('已刷新')
   }
 }
 
-onMounted(() => {
-  fetchStats()
-})
+onMounted(fetchStats)
 </script>
 
 <style scoped>
@@ -150,59 +113,34 @@ onMounted(() => {
   display: block;
 }
 
-.admin-metric-card .admin-metric-icon {
-  color: #2563eb;
-  background: #eef4ff;
-}
-
-.metric-pending .admin-metric-icon {
-  color: #ff7d00;
-  background: #fff7e8;
-}
-
-.metric-approved .admin-metric-icon {
-  color: #00b42a;
-  background: #e8ffef;
-}
-
-.metric-rejected .admin-metric-icon {
-  color: #f53f3f;
-  background: #fff0f0;
-}
-
-.metric-total .admin-metric-icon {
-  color: #2563eb;
-  background: #eef4ff;
-}
-
-.metric-users .admin-metric-icon {
-  color: #7c3aed;
-  background: #f3ecff;
-}
-
-.metric-active .admin-metric-icon {
-  color: #08979c;
-  background: #e6fffb;
-}
-
-.quick-actions {
-  margin-top: 4px;
-}
-
-.action-buttons {
+.pending-banner {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding: 14px 20px;
+  color: var(--admin-text);
+  font-size: 14px;
+  text-decoration: none;
 }
 
-.action-buttons :deep(.arco-btn) {
-  min-width: 112px;
+.pending-banner b {
+  font-size: 16px;
+  font-weight: 600;
 }
 
-@media (max-width: 768px) {
-  .action-buttons :deep(.arco-btn) {
-    flex: 1 1 130px;
-    min-width: 0;
-  }
+.pending-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+}
+
+.pending-banner:hover {
+  border-color: var(--admin-border-strong);
+}
+
+.admin-metric-value.is-pending {
+  color: var(--accent);
 }
 </style>

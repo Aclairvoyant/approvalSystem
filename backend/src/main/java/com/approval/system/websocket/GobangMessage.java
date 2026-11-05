@@ -81,9 +81,16 @@ public class GobangMessage {
     }
 
     public static GobangMessage error(Long gameId, String errorMessage) {
+        return error(gameId, null, errorMessage);
+    }
+
+    /**
+     * 错误消息会广播到整个房间，带上 senderId 让客户端只提示发起操作的一方
+     */
+    public static GobangMessage error(Long gameId, Long senderId, String errorMessage) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("error", errorMessage);
-        return build(MessageType.GOBANG_ERROR, gameId, null, null, data);
+        return build(MessageType.GOBANG_ERROR, gameId, senderId, null, data);
     }
 
     private static GobangMessage build(MessageType type, Long gameId, Long senderId,

@@ -1,6 +1,11 @@
 package com.approval.system.controller;
 
+import com.approval.system.common.enums.ApplicationStatusEnum;
+import com.approval.system.common.enums.UserStatusEnum;
+import com.approval.system.common.exception.BusinessException;
 import com.approval.system.common.response.ApiResponse;
+import com.approval.system.common.security.ActiveUserChecker;
+import com.approval.system.dto.AdminUserUpdateRequest;
 import com.approval.system.dto.EmailSettingsResponse;
 import com.approval.system.dto.EmailSettingsUpdateRequest;
 import com.approval.system.dto.MimoConfigResponse;
@@ -12,22 +17,33 @@ import com.approval.system.entity.User;
 import com.approval.system.service.IApplicationService;
 import com.approval.system.service.INotificationService;
 import com.approval.system.service.ISystemSettingService;
-import com.approval.system.service.IUserRelationService;
 import com.approval.system.service.IUserService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * 后台管理接口。访问控制由 SecurityConfig（/api/admin/** 需要 ROLE_ADMIN）统一处理，
+ * 这里的 @PreAuthorize 是同一规则的第二道保险，防止以后改 URL 规则时漏掉。
+ * 注意：普通用户也会用的 /api/admin/user/stats 在 {@link UserStatsController}。
+ */
 @Slf4j
 @RestController
 @RequestMapping("/api/admin")
+@PreAuthorize("hasRole('ADMIN')")
 public class AdminController {
 
     @Autowired
@@ -37,109 +53,28 @@ public class AdminController {
     private IApplicationService applicationService;
 
     @Autowired
-    private IUserRelationService userRelationService;
-
-    @Autowired
     private INotificationService notificationService;
 
     @Autowired
     private ISystemSettingService systemSettingService;
+
+    @Autowired
+    private ActiveUserChecker activeUserChecker;
 
     /**
      * 获取仪表盘统计数据
      */
     @GetMapping("/dashboard/stats")
     public ApiResponse<Map<String, Object>> getDashboardStats() {
-        try {
-            if (!isCurrentUserAdmin()) {
-                return ApiResponse.fail(403, "没有管理员权限");
-            }
-
-            Long userId = getCurrentUserId();
-            if (userId == null) {
-                return ApiResponse.fail(401, "用户未登录");
-            }
-
-            Map<String, Object> stats = new HashMap<>();
-
-            // 获取申请统计
-            long totalApplications = applicationService.count();
-            long pendingApplications = applicationService.count(
-                    new LambdaQueryWrapper<Application>().eq(Application::getStatus, 1));
-            long approvedApplications = applicationService.count(
-                    new LambdaQueryWrapper<Application>().eq(Application::getStatus, 2));
-            long rejectedApplications = applicationService.count(
-                    new LambdaQueryWrapper<Application>().eq(Application::getStatus, 3));
-
-            // 获取用户统计
-            long totalUsers = userService.count();
-            long activeUsers = userService.count(
-                    new LambdaQueryWrapper<User>().eq(User::getStatus, 1));
-
-            stats.put("totalApplications", totalApplications);
-            stats.put("pendingApplications", pendingApplications);
-            stats.put("approvedApplications", approvedApplications);
-            stats.put("rejectedApplications", rejectedApplications);
-            stats.put("totalUsers", totalUsers);
-            stats.put("activeUsers", activeUsers);
-
-            return ApiResponse.success(stats);
-        } catch (Exception e) {
-            log.error("获取仪表盘统计失败", e);
-            return ApiResponse.fail(500, e.getMessage());
-        }
-    }
-
-    /**
-     * 获取用户个人统计数据
-     */
-    @GetMapping("/user/stats")
-    public ApiResponse<Map<String, Object>> getUserStats() {
-        try {
-            Long userId = getCurrentUserId();
-            if (userId == null) {
-                return ApiResponse.fail(401, "用户未登录");
-            }
-
-            Map<String, Object> stats = new HashMap<>();
-
-            // 我发起的申请统计
-            long myPending = applicationService.count(
-                    new LambdaQueryWrapper<Application>()
-                            .eq(Application::getApplicantId, userId)
-                            .eq(Application::getStatus, 1));
-            long myApproved = applicationService.count(
-                    new LambdaQueryWrapper<Application>()
-                            .eq(Application::getApplicantId, userId)
-                            .eq(Application::getStatus, 2));
-            long myRejected = applicationService.count(
-                    new LambdaQueryWrapper<Application>()
-                            .eq(Application::getApplicantId, userId)
-                            .eq(Application::getStatus, 3));
-
-            // 待我审批的申请
-            long pendingForMe = applicationService.count(
-                    new LambdaQueryWrapper<Application>()
-                            .eq(Application::getApproverId, userId)
-                            .eq(Application::getStatus, 1));
-
-            // 我的对象数量
-            long myRelations = userRelationService.count(
-                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.approval.system.entity.UserRelation>()
-                            .eq("user_id", userId)
-                            .eq("relation_type", 2));
-
-            stats.put("myPending", myPending);
-            stats.put("myApproved", myApproved);
-            stats.put("myRejected", myRejected);
-            stats.put("pendingForMe", pendingForMe);
-            stats.put("myRelations", myRelations);
-
-            return ApiResponse.success(stats);
-        } catch (Exception e) {
-            log.error("获取用户统计失败", e);
-            return ApiResponse.fail(500, e.getMessage());
-        }
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("totalApplications", applicationService.count());
+        stats.put("pendingApplications", countApplications(ApplicationStatusEnum.PENDING));
+        stats.put("approvedApplications", countApplications(ApplicationStatusEnum.APPROVED));
+        stats.put("rejectedApplications", countApplications(ApplicationStatusEnum.REJECTED));
+        stats.put("totalUsers", userService.count());
+        stats.put("activeUsers", userService.count(
+                new LambdaQueryWrapper<User>().eq(User::getStatus, UserStatusEnum.ENABLED.getCode())));
+        return ApiResponse.success(stats);
     }
 
     /**
@@ -149,19 +84,10 @@ public class AdminController {
     public ApiResponse<Page<User>> getAllUsers(
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "10") Integer pageSize) {
-        try {
-            if (!isCurrentUserAdmin()) {
-                return ApiResponse.fail(403, "没有管理员权限");
-            }
-
-            Page<User> page = userService.getAllUsers(pageNum, pageSize);
-            // 隐藏密码
-            page.getRecords().forEach(user -> user.setPassword(null));
-            return ApiResponse.success(page);
-        } catch (Exception e) {
-            log.error("获取用户列表失败", e);
-            return ApiResponse.fail(500, e.getMessage());
-        }
+        Page<User> page = userService.getAllUsers(pageNum, pageSize);
+        // 隐藏密码
+        page.getRecords().forEach(user -> user.setPassword(null));
+        return ApiResponse.success(page);
     }
 
     /**
@@ -172,23 +98,14 @@ public class AdminController {
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "10") Integer pageSize,
             @RequestParam(required = false) Integer status) {
-        try {
-            if (!isCurrentUserAdmin()) {
-                return ApiResponse.fail(403, "没有管理员权限");
-            }
-
-            Page<Application> page = new Page<>(pageNum, pageSize);
-            LambdaQueryWrapper<Application> wrapper = new LambdaQueryWrapper<>();
-            if (status != null) {
-                wrapper.eq(Application::getStatus, status);
-            }
-            wrapper.orderByDesc(Application::getCreatedAt);
-            page = applicationService.page(page, wrapper);
-            return ApiResponse.success(page);
-        } catch (Exception e) {
-            log.error("获取申请列表失败", e);
-            return ApiResponse.fail(500, e.getMessage());
+        LambdaQueryWrapper<Application> wrapper = new LambdaQueryWrapper<>();
+        if (status != null) {
+            wrapper.eq(Application::getStatus, status);
         }
+        wrapper.orderByDesc(Application::getCreatedAt);
+        Page<Application> page = applicationService.page(new Page<>(pageNum, pageSize), wrapper);
+        applicationService.fillUserNames(page.getRecords());
+        return ApiResponse.success(page);
     }
 
     /**
@@ -200,26 +117,15 @@ public class AdminController {
             @RequestParam(defaultValue = "10") Integer pageSize,
             @RequestParam(required = false) Integer sendStatus,
             @RequestParam(required = false) Integer notifyType) {
-        try {
-            if (!isCurrentUserAdmin()) {
-                return ApiResponse.fail(403, "没有管理员权限");
-            }
-
-            Page<Notification> page = new Page<>(pageNum, pageSize);
-            LambdaQueryWrapper<Notification> wrapper = new LambdaQueryWrapper<>();
-            if (sendStatus != null) {
-                wrapper.eq(Notification::getSendStatus, sendStatus);
-            }
-            if (notifyType != null) {
-                wrapper.eq(Notification::getNotifyType, notifyType);
-            }
-            wrapper.orderByDesc(Notification::getCreatedAt);
-            page = notificationService.page(page, wrapper);
-            return ApiResponse.success(page);
-        } catch (Exception e) {
-            log.error("获取通知列表失败", e);
-            return ApiResponse.fail(500, e.getMessage());
+        LambdaQueryWrapper<Notification> wrapper = new LambdaQueryWrapper<>();
+        if (sendStatus != null) {
+            wrapper.eq(Notification::getSendStatus, sendStatus);
         }
+        if (notifyType != null) {
+            wrapper.eq(Notification::getNotifyType, notifyType);
+        }
+        wrapper.orderByDesc(Notification::getCreatedAt);
+        return ApiResponse.success(notificationService.page(new Page<>(pageNum, pageSize), wrapper));
     }
 
     /**
@@ -227,26 +133,23 @@ public class AdminController {
      */
     @PutMapping("/users/{userId}/status")
     public ApiResponse<User> updateUserStatus(
+            @AuthenticationPrincipal Long adminId,
             @PathVariable Long userId,
-            @RequestParam Integer status) {
-        try {
-            if (!isCurrentUserAdmin()) {
-                return ApiResponse.fail(403, "没有管理员权限");
-            }
-
-            User user = userService.getById(userId);
-            if (user == null) {
-                return ApiResponse.fail(404, "用户不存在");
-            }
-            user.setStatus(status);
-            userService.updateById(user);
-            user.setPassword(null); // 隐藏密码
-            log.info("管理员更新用户状态，userId: {}, status: {}", userId, status);
-            return ApiResponse.success(user);
-        } catch (Exception e) {
-            log.error("更新用户状态失败", e);
-            return ApiResponse.fail(500, e.getMessage());
+            @RequestParam @NotNull @Min(value = 0, message = "用户状态只能是 0 或 1")
+            @Max(value = 1, message = "用户状态只能是 0 或 1") Integer status) {
+        // 防止管理员把自己禁用后锁在门外
+        if (userId.equals(adminId)) {
+            throw BusinessException.badRequest("不能修改自己的账号状态");
         }
+
+        User user = requireUser(userId);
+        user.setStatus(status);
+        userService.updateById(user);
+        // 让已登录的 token 立即按新状态校验
+        activeUserChecker.evict(userId);
+        user.setPassword(null);
+        log.info("管理员更新用户状态，userId: {}, status: {}", userId, status);
+        return ApiResponse.success(user);
     }
 
     /**
@@ -254,26 +157,23 @@ public class AdminController {
      */
     @PutMapping("/users/{userId}/role")
     public ApiResponse<User> updateUserRole(
+            @AuthenticationPrincipal Long adminId,
             @PathVariable Long userId,
-            @RequestParam Integer role) {
-        try {
-            if (!isCurrentUserAdmin()) {
-                return ApiResponse.fail(403, "没有管理员权限");
-            }
-
-            User user = userService.getById(userId);
-            if (user == null) {
-                return ApiResponse.fail(404, "用户不存在");
-            }
-            user.setRole(role);
-            userService.updateById(user);
-            user.setPassword(null); // 隐藏密码
-            log.info("管理员更新用户角色，userId: {}, role: {}", userId, role);
-            return ApiResponse.success(user);
-        } catch (Exception e) {
-            log.error("更新用户角色失败", e);
-            return ApiResponse.fail(500, e.getMessage());
+            @RequestParam @NotNull @Min(value = 0, message = "用户角色只能是 0 或 1")
+            @Max(value = 1, message = "用户角色只能是 0 或 1") Integer role) {
+        // 防止管理员把自己降级后失去后台权限
+        if (userId.equals(adminId)) {
+            throw BusinessException.badRequest("不能修改自己的角色");
         }
+
+        User user = requireUser(userId);
+        user.setRole(role);
+        userService.updateById(user);
+        // 角色也缓存在认证快照里，立即刷新
+        activeUserChecker.evict(userId);
+        user.setPassword(null);
+        log.info("管理员更新用户角色，userId: {}, role: {}", userId, role);
+        return ApiResponse.success(user);
     }
 
     /**
@@ -283,148 +183,77 @@ public class AdminController {
     public ApiResponse<User> updateVoiceNotificationPermission(
             @PathVariable Long userId,
             @RequestParam Boolean enabled) {
-        try {
-            if (!isCurrentUserAdmin()) {
-                return ApiResponse.fail(403, "没有管理员权限");
-            }
-
-            User user = userService.getById(userId);
-            if (user == null) {
-                return ApiResponse.fail(404, "用户不存在");
-            }
-            user.setVoiceNotificationEnabled(enabled);
-            userService.updateById(user);
-            user.setPassword(null); // 隐藏密码
-            log.info("管理员更新用户语音通知权限，userId: {}, enabled: {}", userId, enabled);
-            return ApiResponse.success(user);
-        } catch (Exception e) {
-            log.error("更新用户语音通知权限失败", e);
-            return ApiResponse.fail(500, e.getMessage());
-        }
+        User user = requireUser(userId);
+        user.setVoiceNotificationEnabled(enabled);
+        userService.updateById(user);
+        user.setPassword(null);
+        log.info("管理员更新用户语音通知权限，userId: {}, enabled: {}", userId, enabled);
+        return ApiResponse.success(user);
     }
 
     /**
-     * 更新用户基本信息（管理员用）
+     * 更新用户基本信息（管理员用）。只更新请求里出现（非 null）的字段。
      */
     @PutMapping("/users/{userId}")
     public ApiResponse<User> updateUserInfo(
             @PathVariable Long userId,
-            @RequestBody Map<String, String> updates) {
-        try {
-            if (!isCurrentUserAdmin()) {
-                return ApiResponse.fail(403, "没有管理员权限");
-            }
+            @Valid @RequestBody AdminUserUpdateRequest updates) {
+        User user = requireUser(userId);
 
-            User user = userService.getById(userId);
-            if (user == null) {
-                return ApiResponse.fail(404, "用户不存在");
-            }
-
-            // 更新真实姓名
-            if (updates.containsKey("realName")) {
-                user.setRealName(updates.get("realName"));
-            }
-            // 更新手机号
-            if (updates.containsKey("phone")) {
-                String phone = updates.get("phone");
-                if (phone != null && !phone.isEmpty()) {
-                    // 检查手机号是否已被其他用户使用
-                    User existingUser = userService.getUserByPhone(phone);
-                    if (existingUser != null && !existingUser.getId().equals(userId)) {
-                        return ApiResponse.fail(400, "该手机号已被其他用户使用");
-                    }
-                }
-                user.setPhone(phone);
-            }
-            // 更新邮箱
-            if (updates.containsKey("email")) {
-                String email = updates.get("email");
-                if (email != null && !email.isEmpty()) {
-                    // 检查邮箱是否已被其他用户使用
-                    User existingUser = userService.getUserByEmail(email);
-                    if (existingUser != null && !existingUser.getId().equals(userId)) {
-                        return ApiResponse.fail(400, "该邮箱已被其他用户使用");
-                    }
-                }
-                user.setEmail(email);
-            }
-
-            userService.updateById(user);
-            user.setPassword(null); // 隐藏密码
-            log.info("管理员更新用户信息，userId: {}", userId);
-            return ApiResponse.success(user);
-        } catch (Exception e) {
-            log.error("更新用户信息失败", e);
-            return ApiResponse.fail(500, e.getMessage());
+        if (updates.getRealName() != null) {
+            user.setRealName(updates.getRealName());
         }
+        if (updates.getPhone() != null) {
+            String phone = updates.getPhone();
+            User existingUser = userService.getUserByPhone(phone);
+            if (existingUser != null && !existingUser.getId().equals(userId)) {
+                throw BusinessException.conflict("该手机号已被其他用户使用");
+            }
+            user.setPhone(phone);
+        }
+        if (updates.getEmail() != null) {
+            String email = updates.getEmail();
+            if (!email.isEmpty()) {
+                User existingUser = userService.getUserByEmail(email);
+                if (existingUser != null && !existingUser.getId().equals(userId)) {
+                    throw BusinessException.conflict("该邮箱已被其他用户使用");
+                }
+            }
+            user.setEmail(email);
+        }
+
+        userService.updateById(user);
+        user.setPassword(null);
+        log.info("管理员更新用户信息，userId: {}", userId);
+        return ApiResponse.success(user);
     }
 
     /**
-     * 管理员批准申请
+     * 管理员批准申请：不要求管理员是该申请指定的审批人
      */
     @PostMapping("/applications/{applicationId}/approve")
     public ApiResponse<Void> adminApproveApplication(
+            @AuthenticationPrincipal Long adminId,
             @PathVariable Long applicationId,
-            @RequestParam(required = false) String approvalDetail) {
-        try {
-            if (!isCurrentUserAdmin()) {
-                return ApiResponse.fail(403, "没有管理员权限");
-            }
-
-            Long adminId = getCurrentUserId();
-            if (adminId == null) {
-                return ApiResponse.fail(401, "用户未登录");
-            }
-
-            Application application = applicationService.getById(applicationId);
-            if (application == null) {
-                return ApiResponse.fail(404, "申请不存在");
-            }
-
-            // 管理员强制批准
-            applicationService.approveApplication(applicationId, adminId,
-                approvalDetail != null ? approvalDetail : "管理员批准");
-
-            log.info("管理员批准申请，applicationId: {}, adminId: {}", applicationId, adminId);
-            return ApiResponse.success(null);
-        } catch (Exception e) {
-            log.error("管理员批准申请失败", e);
-            return ApiResponse.fail(500, e.getMessage());
-        }
+            @RequestParam(required = false) @Size(max = 500, message = "审批意见不能超过500个字符") String approvalDetail) {
+        applicationService.adminApproveApplication(applicationId, adminId,
+                StringUtils.hasText(approvalDetail) ? approvalDetail.trim() : "管理员批准");
+        log.info("管理员批准申请，applicationId: {}, adminId: {}", applicationId, adminId);
+        return ApiResponse.success(null);
     }
 
     /**
-     * 管理员驳回申请
+     * 管理员驳回申请：不要求管理员是该申请指定的审批人
      */
     @PostMapping("/applications/{applicationId}/reject")
     public ApiResponse<Void> adminRejectApplication(
+            @AuthenticationPrincipal Long adminId,
             @PathVariable Long applicationId,
-            @RequestParam(required = false) String rejectReason) {
-        try {
-            if (!isCurrentUserAdmin()) {
-                return ApiResponse.fail(403, "没有管理员权限");
-            }
-
-            Long adminId = getCurrentUserId();
-            if (adminId == null) {
-                return ApiResponse.fail(401, "用户未登录");
-            }
-
-            Application application = applicationService.getById(applicationId);
-            if (application == null) {
-                return ApiResponse.fail(404, "申请不存在");
-            }
-
-            // 管理员强制驳回
-            applicationService.rejectApplication(applicationId, adminId,
-                rejectReason != null ? rejectReason : "管理员驳回");
-
-            log.info("管理员驳回申请，applicationId: {}, adminId: {}", applicationId, adminId);
-            return ApiResponse.success(null);
-        } catch (Exception e) {
-            log.error("管理员驳回申请失败", e);
-            return ApiResponse.fail(500, e.getMessage());
-        }
+            @RequestParam(required = false) @Size(max = 500, message = "驳回原因不能超过500个字符") String rejectReason) {
+        applicationService.adminRejectApplication(applicationId, adminId,
+                StringUtils.hasText(rejectReason) ? rejectReason.trim() : "管理员驳回");
+        log.info("管理员驳回申请，applicationId: {}, adminId: {}", applicationId, adminId);
+        return ApiResponse.success(null);
     }
 
     /**
@@ -432,38 +261,19 @@ public class AdminController {
      */
     @GetMapping("/settings/email")
     public ApiResponse<EmailSettingsResponse> getEmailSettings() {
-        try {
-            if (!isCurrentUserAdmin()) {
-                return ApiResponse.fail(403, "没有管理员权限");
-            }
-
-            return ApiResponse.success(systemSettingService.getEmailSettings());
-        } catch (Exception e) {
-            log.error("获取邮件配置失败", e);
-            return ApiResponse.fail(500, "获取邮件配置失败");
-        }
+        return ApiResponse.success(systemSettingService.getEmailSettings());
     }
 
     /**
      * 更新邮件发送配置（管理员用）
      */
     @PutMapping("/settings/email")
-    public ApiResponse<EmailSettingsResponse> updateEmailSettings(@RequestBody EmailSettingsUpdateRequest request) {
-        try {
-            if (!isCurrentUserAdmin()) {
-                return ApiResponse.fail(403, "没有管理员权限");
-            }
-
-            Long adminId = getCurrentUserId();
-            EmailSettingsResponse response = systemSettingService.updateEmailSettings(request, adminId);
-            log.info("管理员更新邮件发送配置，adminId: {}", adminId);
-            return ApiResponse.success(response);
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.fail(400, e.getMessage());
-        } catch (Exception e) {
-            log.error("更新邮件配置失败", e);
-            return ApiResponse.fail(500, "更新邮件配置失败");
-        }
+    public ApiResponse<EmailSettingsResponse> updateEmailSettings(
+            @AuthenticationPrincipal Long adminId,
+            @Valid @RequestBody EmailSettingsUpdateRequest request) {
+        EmailSettingsResponse response = systemSettingService.updateEmailSettings(request, adminId);
+        log.info("管理员更新邮件发送配置，adminId: {}", adminId);
+        return ApiResponse.success(response);
     }
 
     /**
@@ -471,38 +281,19 @@ public class AdminController {
      */
     @GetMapping("/settings/voice")
     public ApiResponse<VoiceModelSettingsResponse> getVoiceModelSettings() {
-        try {
-            if (!isCurrentUserAdmin()) {
-                return ApiResponse.fail(403, "没有管理员权限");
-            }
-
-            return ApiResponse.success(systemSettingService.getVoiceModelSettings());
-        } catch (Exception e) {
-            log.error("获取语音大模型配置失败", e);
-            return ApiResponse.fail(500, "获取语音大模型配置失败");
-        }
+        return ApiResponse.success(systemSettingService.getVoiceModelSettings());
     }
 
     /**
      * 更新语音大模型配置（管理员用）
      */
     @PutMapping("/settings/voice")
-    public ApiResponse<VoiceModelSettingsResponse> updateVoiceModelSettings(@RequestBody VoiceModelSettingsUpdateRequest request) {
-        try {
-            if (!isCurrentUserAdmin()) {
-                return ApiResponse.fail(403, "没有管理员权限");
-            }
-
-            Long adminId = getCurrentUserId();
-            VoiceModelSettingsResponse response = systemSettingService.updateVoiceModelSettings(request, adminId);
-            log.info("管理员更新语音大模型配置，adminId: {}", adminId);
-            return ApiResponse.success(response);
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.fail(400, e.getMessage());
-        } catch (Exception e) {
-            log.error("更新语音大模型配置失败", e);
-            return ApiResponse.fail(500, "更新语音大模型配置失败");
-        }
+    public ApiResponse<VoiceModelSettingsResponse> updateVoiceModelSettings(
+            @AuthenticationPrincipal Long adminId,
+            @Valid @RequestBody VoiceModelSettingsUpdateRequest request) {
+        VoiceModelSettingsResponse response = systemSettingService.updateVoiceModelSettings(request, adminId);
+        log.info("管理员更新语音大模型配置，adminId: {}", adminId);
+        return ApiResponse.success(response);
     }
 
     /**
@@ -510,52 +301,28 @@ public class AdminController {
      */
     @GetMapping("/mimo/config")
     public ApiResponse<MimoConfigResponse> getMimoConfig() {
-        try {
-            if (!isCurrentUserAdmin()) {
-                return ApiResponse.fail(403, "没有管理员权限");
-            }
-
-            VoiceModelSettingsResponse voiceSettings = systemSettingService.getVoiceModelSettings();
-            MimoConfigResponse response = MimoConfigResponse.builder()
-                    .enabled(voiceSettings.getEnabled())
-                    .baseUrl(voiceSettings.getAsrBaseUrl())
-                    .asrModel(voiceSettings.getAsrModel())
-                    .chatModel(voiceSettings.getChatModel())
-                    .apiKeyConfigured(voiceSettings.getAsrApiKeyConfigured())
-                    .apiKeyMasked(voiceSettings.getAsrApiKeyMasked())
-                    .build();
-
-            return ApiResponse.success(response);
-        } catch (Exception e) {
-            log.error("获取 MiMo 配置失败", e);
-            return ApiResponse.fail(500, "获取 MiMo 配置失败");
-        }
+        VoiceModelSettingsResponse voiceSettings = systemSettingService.getVoiceModelSettings();
+        MimoConfigResponse response = MimoConfigResponse.builder()
+                .enabled(voiceSettings.getEnabled())
+                .baseUrl(voiceSettings.getAsrBaseUrl())
+                .asrModel(voiceSettings.getAsrModel())
+                .chatModel(voiceSettings.getChatModel())
+                .apiKeyConfigured(voiceSettings.getAsrApiKeyConfigured())
+                .apiKeyMasked(voiceSettings.getAsrApiKeyMasked())
+                .build();
+        return ApiResponse.success(response);
     }
 
-    /**
-     * 获取当前用户ID
-     */
-    private Long getCurrentUserId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null) {
-            return null;
-        }
-
-        Object principal = authentication.getPrincipal();
-        if (principal instanceof Long) {
-            return (Long) principal;
-        }
-        return null;
+    private long countApplications(ApplicationStatusEnum status) {
+        return applicationService.count(
+                new LambdaQueryWrapper<Application>().eq(Application::getStatus, status.getCode()));
     }
 
-    private boolean isCurrentUserAdmin() {
-        Long userId = getCurrentUserId();
-        if (userId == null) {
-            return false;
-        }
-
+    private User requireUser(Long userId) {
         User user = userService.getById(userId);
-        return user != null && user.isAdmin();
+        if (user == null) {
+            throw BusinessException.notFound("用户不存在");
+        }
+        return user;
     }
-
 }

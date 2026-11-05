@@ -1,5 +1,6 @@
 package com.approval.system.service.impl;
 
+import com.approval.system.common.exception.BusinessException;
 import com.approval.system.common.utils.OssUtils;
 import com.approval.system.entity.ApprovalAttachment;
 import com.approval.system.mapper.ApprovalAttachmentMapper;
@@ -46,9 +47,11 @@ public class ApprovalAttachmentServiceImpl extends ServiceImpl<ApprovalAttachmen
 
             this.save(attachment);
             return attachment;
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("上传审批附件失败，applicationId: {}, operatorId: {}", applicationId, operatorId, e);
-            throw new RuntimeException("上传附件失败: " + e.getMessage());
+            throw new BusinessException(BusinessException.SERVICE_UNAVAILABLE, "上传附件失败，请稍后重试", e);
         }
     }
 

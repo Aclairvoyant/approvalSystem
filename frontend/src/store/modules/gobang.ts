@@ -165,6 +165,32 @@ function buildBoardFromMoves(moves: GobangMove[], count: number): {
   }
 }
 
+const DIRECTIONS: Array<[number, number]> = [[0, 1], [1, 0], [1, 1], [1, -1]]
+
+/** 后端没有返回连珠位置时，从终局棋盘和最后一手推算五连 */
+function findWinningLine(board: GobangCell[][], from: GobangPoint | null): GobangPoint[] {
+  if (!from) return []
+  const color = board[from.row]?.[from.col]
+  if (!color) return []
+
+  for (const [dr, dc] of DIRECTIONS) {
+    const line: GobangPoint[] = [from]
+    for (const sign of [1, -1]) {
+      let row = from.row + dr * sign
+      let col = from.col + dc * sign
+      while (board[row]?.[col] === color) {
+        line.push({ row, col })
+        row += dr * sign
+        col += dc * sign
+      }
+    }
+    if (line.length >= 5) {
+      return line.sort((a, b) => a.row - b.row || a.col - b.col)
+    }
+  }
+  return []
+}
+
 export const useGobangStore = defineStore('gobang', () => {
   const userStore = useUserStore()
 
@@ -182,6 +208,11 @@ export const useGobangStore = defineStore('gobang', () => {
   const isReviewLoading = ref(false)
   const errorMessage = ref<string | null>(null)
   const gameHistory = ref<GobangGame[]>([])
+  const isPlacing = ref(false)
+
+  // 每次进入 / 离开房间递增，用来丢弃旧房间迟到的响应
+  let roomToken = 0
+  let placingTimeout: ReturnType<typeof setTimeout> | null = null
 
   const currentTurnColor = computed(() => {
     if (!currentGame.value) return GobangColor.BLACK
@@ -255,11 +286,31 @@ export const useGobangStore = defineStore('gobang', () => {
       createEmptyGobangBoard()
 
     board.value = cloneBoard(nextBoard)
-    lastMove.value = normalizePoint(game.lastMove) || normalizePoint(boardData?.lastMove)
+
+    // 后端目前只返回 lastMoveId，没有坐标：没给就沿用之前的标记（棋子还在的话），或者从棋谱推算
+    const previousLastMove = lastMove.value
+    lastMove.value = normalizePoint(game.lastMove) ||
+      normalizePoint(boardData?.lastMove) ||
+      (previousLastMove && nextBoard[previousLastMove.row]?.[previousLastMove.col] ? previousLastMove : null) ||
+      buildBoardFromMoves(replayMoves.value, replayMoves.value.length).lastMove
+
     const topLevelWinningLine = normalizeWinningLine(game.winningLine)
-    winningLine.value = topLevelWinningLine.length > 0
+    const providedLine = topLevelWinningLine.length > 0
       ? topLevelWinningLine
       : normalizeWinningLine(boardData?.winningLine)
+    winningLine.value = providedLine.length > 0 || Number(game.gameStatus) !== GobangGameStatus.FINISHED
+      ? providedLine
+      : findWinningLine(nextBoard, lastMove.value)
+
+    // 刷新页面后恢复待处理的悔棋请求
+    const requesterId = normalizeOptionalNumber(game.pendingUndoRequesterId)
+    undoRequest.value = requesterId
+      ? {
+          requesterId,
+          responderId: normalizeOptionalNumber(game.pendingUndoResponderId),
+          targetMoveNumber: normalizeOptionalNumber(game.pendingUndoTargetMoveNumber),
+        }
+      : null
   }
 
   function applyMessageData(data: UnknownRecord | undefined): void {
@@ -309,12 +360,10 @@ export const useGobangStore = defineStore('gobang', () => {
       throw new Error('请先登录')
     }
 
-    await gobangWebSocket.connect(userStore.token, {
-      onConnected: () => {
-        isConnected.value = true
-      },
-      onDisconnected: () => {
-        isConnected.value = false
+    gobangWebSocket.setCallbacks({
+      onConnectionChange: (connected) => {
+        isConnected.value = connected
+        if (!connected) clearPlacing()
       },
       onError: (error) => {
         errorMessage.value = error.message
@@ -322,11 +371,21 @@ export const useGobangStore = defineStore('gobang', () => {
       },
       onMessage: handleMessage
     })
+    await gobangWebSocket.connect()
   }
 
   function disconnectWebSocket(): void {
+    leaveGameRoom()
     gobangWebSocket.disconnect()
     isConnected.value = false
+  }
+
+  function clearPlacing(): void {
+    isPlacing.value = false
+    if (placingTimeout) {
+      clearTimeout(placingTimeout)
+      placingTimeout = null
+    }
   }
 
   function handleMessage(message: GobangMessage): void {
@@ -334,8 +393,14 @@ export const useGobangStore = defineStore('gobang', () => {
 
     switch (message.type) {
       case GobangMessageType.STATE_UPDATE:
+        applyMessageData(data)
+        clearPlacing()
+        break
       case GobangMessageType.STONE_PLACED:
         applyMessageData(data)
+        clearPlacing()
+        // 棋谱已经过时，复盘时会重新拉取；这里先标记，避免对局中复盘按钮一直不可用
+        replayStale = true
         break
       case GobangMessageType.UNDO_REQUESTED:
         {
@@ -377,11 +442,16 @@ export const useGobangStore = defineStore('gobang', () => {
         }
         break
       case GobangMessageType.ERROR:
+        // 错误会广播给双方，只提示发起操作的一方
+        if (message.senderId && message.senderId !== userStore.userId) break
+        clearPlacing()
         errorMessage.value = String(data?.error || data?.message || '五子棋操作失败')
         showToast({ type: 'fail', message: errorMessage.value })
         break
     }
   }
+
+  let replayStale = false
 
   async function createGame(opponentUserId: number): Promise<GobangGame> {
     isLoading.value = true
@@ -416,13 +486,17 @@ export const useGobangStore = defineStore('gobang', () => {
     }
   }
 
+  let historyRequest = 0
   async function fetchGameHistory(status?: number): Promise<void> {
+    const id = ++historyRequest
     isLoading.value = true
     try {
       const response = await gobangApi.getUserGames(status)
-      gameHistory.value = Array.isArray(response) ? response : response.records || []
+      if (id === historyRequest) {
+        gameHistory.value = Array.isArray(response) ? response : response.records || []
+      }
     } finally {
-      isLoading.value = false
+      if (id === historyRequest) isLoading.value = false
     }
   }
 
@@ -430,9 +504,20 @@ export const useGobangStore = defineStore('gobang', () => {
     const targetGameId = gameId ?? currentGame.value?.id
     if (!targetGameId) return []
 
+    const token = roomToken
     const moves = await gobangApi.getMoves(targetGameId)
+    if (token !== roomToken) return []
     replayMoves.value = [...moves].sort((a, b) => a.moveNumber - b.moveNumber)
     replayIndex.value = replayMoves.value.length
+    replayStale = false
+    return replayMoves.value
+  }
+
+  /** 对局进行中棋谱会变；需要复盘时如果有新落子就重新拉一次 */
+  async function ensureReplayMoves(): Promise<GobangMove[]> {
+    if (replayStale || replayMoves.value.length === 0) {
+      return fetchReplayMoves()
+    }
     return replayMoves.value
   }
 
@@ -440,15 +525,18 @@ export const useGobangStore = defineStore('gobang', () => {
     const targetGameId = gameId ?? currentGame.value?.id
     if (!targetGameId) return null
 
+    const token = roomToken
     isReviewLoading.value = true
     try {
-      aiReview.value = await gobangApi.getAiReview(targetGameId)
-      return aiReview.value
+      const review = await gobangApi.getAiReview(targetGameId)
+      if (token !== roomToken) return null
+      aiReview.value = review
+      return review
     } catch (error: any) {
-      showToast({ type: 'fail', message: error.message || 'AI 复盘生成失败' })
+      if (token === roomToken) showToast({ type: 'fail', message: error.message || 'AI 复盘生成失败' })
       return null
     } finally {
-      isReviewLoading.value = false
+      if (token === roomToken) isReviewLoading.value = false
     }
   }
 
@@ -456,40 +544,61 @@ export const useGobangStore = defineStore('gobang', () => {
     const targetGameId = gameId ?? currentGame.value?.id
     if (!targetGameId) return null
 
+    const token = roomToken
     try {
       const savedReview = await gobangApi.getSavedAiReview(targetGameId)
-      aiReview.value = savedReview
-      return savedReview
+      if (token !== roomToken) return null
+      // 没有保存过复盘时后端返回 null
+      aiReview.value = savedReview && Array.isArray(savedReview.insights) ? savedReview : null
+      return aiReview.value
     } catch {
       return null
     }
   }
 
   async function enterGameRoom(gameId: number): Promise<void> {
-    await fetchGameDetail(gameId)
-    await fetchReplayMoves(gameId)
-    await fetchSavedAiReview(gameId)
+    const token = ++roomToken
+    resetRoomState()
 
-    if (!isConnected.value) {
+    const game = await gobangApi.getGameDetail(gameId)
+    if (token !== roomToken) return
+    await fetchReplayMoves(gameId).catch(() => [])
+    if (token !== roomToken) return
+    applyGame(game)
+    void fetchSavedAiReview(gameId)
+
+    try {
       await connectWebSocket()
+    } catch {
+      // 连接会在后台自动重试，连上后自动订阅；房间照常显示，状态栏提示正在重连
     }
-
+    if (token !== roomToken) return
     gobangWebSocket.subscribeToGame(gameId)
   }
 
-  function leaveGameRoom(): void {
-    gobangWebSocket.unsubscribeFromGame()
+  function resetRoomState(): void {
     currentGame.value = null
     board.value = createEmptyGobangBoard()
     lastMove.value = null
     winningLine.value = []
     undoRequest.value = null
+    replayMoves.value = []
     aiReview.value = null
+    isReviewLoading.value = false
     isReplayMode.value = false
     replayIndex.value = 0
+    replayStale = false
+    clearPlacing()
+  }
+
+  function leaveGameRoom(): void {
+    roomToken += 1
+    gobangWebSocket.unsubscribeFromGame()
+    resetRoomState()
   }
 
   function placeStone(row: number, col: number): void {
+    if (isPlacing.value) return
     if (!currentGame.value || !isMyTurn.value) {
       showToast({ type: 'fail', message: '还没轮到你' })
       return
@@ -500,23 +609,35 @@ export const useGobangStore = defineStore('gobang', () => {
       return
     }
 
-    gobangWebSocket.placeStone(currentGame.value.id, row, col)
+    if (!gobangWebSocket.placeStone(currentGame.value.id, row, col)) {
+      showToast({ type: 'fail', message: '连接已断开，正在重连' })
+      return
+    }
+    // 等服务端确认前不接受第二次落子，避免连点下两手
+    isPlacing.value = true
+    placingTimeout = setTimeout(clearPlacing, 8000)
   }
 
   function requestUndo(): void {
     if (!currentGame.value || !isGamePlaying.value) return
-    gobangWebSocket.requestUndo(currentGame.value.id)
+    if (!gobangWebSocket.requestUndo(currentGame.value.id)) {
+      showToast({ type: 'fail', message: '连接已断开，正在重连' })
+    }
   }
 
-  function respondUndo(accepted: boolean): void {
-    if (!currentGame.value) return
-    gobangWebSocket.respondUndo(currentGame.value.id, accepted)
-    undoRequest.value = null
+  function respondUndo(accepted: boolean): boolean {
+    if (!currentGame.value) return false
+    // 弹窗等服务端广播 UNDO_RESOLVED 后再消失
+    const sent = gobangWebSocket.respondUndo(currentGame.value.id, accepted)
+    if (!sent) showToast({ type: 'fail', message: '连接已断开，正在重连' })
+    return sent
   }
 
   function surrender(): void {
     if (!currentGame.value || !isGamePlaying.value) return
-    gobangWebSocket.surrender(currentGame.value.id)
+    if (!gobangWebSocket.surrender(currentGame.value.id)) {
+      showToast({ type: 'fail', message: '连接已断开，正在重连' })
+    }
   }
 
   async function cancelGame(): Promise<void> {
@@ -562,6 +683,7 @@ export const useGobangStore = defineStore('gobang', () => {
     isConnected,
     isLoading,
     isReviewLoading,
+    isPlacing,
     errorMessage,
     gameHistory,
     currentTurnColor,
@@ -582,6 +704,7 @@ export const useGobangStore = defineStore('gobang', () => {
     fetchGameDetail,
     fetchGameHistory,
     fetchReplayMoves,
+    ensureReplayMoves,
     fetchAiReview,
     fetchSavedAiReview,
     enterGameRoom,

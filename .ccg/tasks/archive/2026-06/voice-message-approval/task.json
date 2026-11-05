@@ -1,0 +1,12 @@
+{
+  "id": "voice-message-approval",
+  "title": "发送语音消息式审批申请并支持审批人播放和转文字",
+  "status": "completed",
+  "complexity": "L",
+  "risk": "high",
+  "domain": "backend/frontend",
+  "currentPhase": "completed",
+  "nextAction": "功能已实现并通过前后端验证和双模型审查，任务待归档",
+  "createdAt": "2026-06-10T09:16:24+0800",
+  "branch": "master"
+}

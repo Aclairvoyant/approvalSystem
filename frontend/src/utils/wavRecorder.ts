@@ -9,6 +9,8 @@
  */
 
 const TARGET_SAMPLE_RATE = 16000
+// 16kHz 16bit 单声道约 32KB/s，5 分钟约 9.6MB，留在后端上传上限之内
+const MAX_UPLOAD_SECONDS = 300
 
 export type RecordingUnsupportedReason =
   | 'insecure-context'
@@ -80,41 +82,52 @@ export async function startRecording(): Promise<RecorderHandle> {
 
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
   const AudioCtx = getAudioContextClass()!
-  const audioContext: AudioContext = new AudioCtx()
-  if (audioContext.state === 'suspended') {
-    await audioContext.resume()
-  }
-  const source = audioContext.createMediaStreamSource(stream)
-
-  // ScriptProcessorNode 已废弃但兼容性最好；4096 帧缓冲
-  const processor = audioContext.createScriptProcessor(4096, 1, 1)
+  let audioContext: AudioContext | null = null
+  let source: MediaStreamAudioSourceNode | null = null
+  let processor: ScriptProcessorNode | null = null
   const chunks: Float32Array[] = []
   let recording = true
 
-  processor.onaudioprocess = (e: AudioProcessingEvent): void => {
-    if (!recording) return
-    const input = e.inputBuffer.getChannelData(0)
-    // 必须拷贝，inputBuffer 会被复用
-    chunks.push(new Float32Array(input))
-  }
-
-  source.connect(processor)
-  processor.connect(audioContext.destination)
-
   const cleanup = (): void => {
     recording = false
-    try { processor.disconnect() } catch { /* ignore */ }
-    try { source.disconnect() } catch { /* ignore */ }
+    try { processor?.disconnect() } catch { /* ignore */ }
+    try { source?.disconnect() } catch { /* ignore */ }
     stream.getTracks().forEach(t => t.stop())
-    if (audioContext.state !== 'closed') {
+    if (audioContext && audioContext.state !== 'closed') {
       audioContext.close().catch(() => { /* ignore */ })
     }
   }
 
+  // 拿到麦克风之后任何一步失败，都要把麦克风关掉再抛出
+  try {
+    audioContext = new AudioCtx()
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume()
+    }
+    source = audioContext.createMediaStreamSource(stream)
+
+    // ScriptProcessorNode 已废弃但兼容性最好；4096 帧缓冲
+    processor = audioContext.createScriptProcessor(4096, 1, 1)
+    processor.onaudioprocess = (e: AudioProcessingEvent): void => {
+      if (!recording) return
+      const input = e.inputBuffer.getChannelData(0)
+      // 必须拷贝，inputBuffer 会被复用
+      chunks.push(new Float32Array(input))
+    }
+
+    source.connect(processor)
+    processor.connect(audioContext.destination)
+  } catch (error) {
+    cleanup()
+    throw error
+  }
+
+  const context = audioContext
+
   return {
     stop: async (): Promise<Blob> => {
       recording = false
-      const sampleRate = audioContext.sampleRate
+      const sampleRate = context.sampleRate
       cleanup()
       const merged = mergeChunks(chunks)
       const downsampled = downsampleTo16k(merged, sampleRate)
@@ -142,6 +155,9 @@ export async function normalizeAudioBlobToWav(audioBlob: Blob): Promise<Blob> {
       await audioContext.resume()
     }
     const audioBuffer = await decodeAudioBlob(audioContext, audioBlob)
+    if (audioBuffer.duration > MAX_UPLOAD_SECONDS) {
+      throw new Error(`音频不能超过 ${MAX_UPLOAD_SECONDS / 60} 分钟`)
+    }
     const mono = mixToMono(audioBuffer)
     const downsampled = downsampleTo16k(mono, audioBuffer.sampleRate)
     return encodeWav(downsampled, TARGET_SAMPLE_RATE)
@@ -204,11 +220,12 @@ function mergeChunks(chunks: Float32Array[]): Float32Array {
 }
 
 /**
- * 线性重采样到 16kHz。源采样率通常为 44100/48000。
+ * 线性重采样到 16kHz。源采样率通常为 44100/48000；
+ * 低于 16kHz 的输入（如 8kHz 电话录音）做线性插值升采样，否则 WAV 头写的采样率和数据对不上。
  */
 function downsampleTo16k(buffer: Float32Array, sourceRate: number): Float32Array {
   if (sourceRate === TARGET_SAMPLE_RATE) return buffer
-  if (sourceRate < TARGET_SAMPLE_RATE) return buffer // 不升采样，直接返回
+  if (sourceRate < TARGET_SAMPLE_RATE) return upsampleTo16k(buffer, sourceRate)
   const ratio = sourceRate / TARGET_SAMPLE_RATE
   const newLength = Math.round(buffer.length / ratio)
   const result = new Float32Array(newLength)
@@ -225,6 +242,21 @@ function downsampleTo16k(buffer: Float32Array, sourceRate: number): Float32Array
     result[offsetResult] = count > 0 ? accum / count : 0
     offsetResult++
     offsetBuffer = nextOffsetBuffer
+  }
+  return result
+}
+
+function upsampleTo16k(buffer: Float32Array, sourceRate: number): Float32Array {
+  if (buffer.length === 0) return buffer
+  const ratio = sourceRate / TARGET_SAMPLE_RATE
+  const newLength = Math.round(buffer.length / ratio)
+  const result = new Float32Array(newLength)
+  for (let i = 0; i < newLength; i++) {
+    const position = i * ratio
+    const left = Math.floor(position)
+    const right = Math.min(left + 1, buffer.length - 1)
+    const weight = position - left
+    result[i] = buffer[left] * (1 - weight) + buffer[right] * weight
   }
   return result
 }

@@ -1,26 +1,42 @@
 package com.approval.system.common.security;
 
+import com.approval.system.common.response.ApiResponse;
 import com.approval.system.common.utils.JwtUtils;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.List;
 
 @Slf4j
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+    private static final String ACCOUNT_DISABLED_MESSAGE = "账号已被禁用，请联系管理员";
+
+    public static final String ROLE_USER = "ROLE_USER";
+    public static final String ROLE_ADMIN = "ROLE_ADMIN";
+
     @Autowired
     private JwtUtils jwtUtils;
+
+    @Autowired
+    private ActiveUserChecker activeUserChecker;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
@@ -51,13 +67,35 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String username = jwtUtils.getUsernameFromToken(token);
 
             if (userId != null && username != null) {
+                // 账号被禁用或删除后，已签发的 token 立即失效；角色同样以数据库为准而不是 token 里的声明，
+                // 这样降级/禁用在缓存过期（或本实例 evict）后马上生效
+                ActiveUserChecker.UserAuthState state = activeUserChecker.lookup(userId);
+                if (!state.active()) {
+                    log.warn("拒绝已禁用用户的请求: userId={}, path={}", userId, path);
+                    writeAccountDisabled(response);
+                    return;
+                }
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                        userId, null, new ArrayList<>());
+                        userId, null, authoritiesOf(state));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private static List<GrantedAuthority> authoritiesOf(ActiveUserChecker.UserAuthState state) {
+        if (state.admin()) {
+            return List.of(new SimpleGrantedAuthority(ROLE_USER), new SimpleGrantedAuthority(ROLE_ADMIN));
+        }
+        return List.of(new SimpleGrantedAuthority(ROLE_USER));
+    }
+
+    private void writeAccountDisabled(HttpServletResponse response) throws IOException {
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setCharacterEncoding("UTF-8");
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        objectMapper.writeValue(response.getWriter(), ApiResponse.fail(401, ACCOUNT_DISABLED_MESSAGE));
     }
 
     /**
