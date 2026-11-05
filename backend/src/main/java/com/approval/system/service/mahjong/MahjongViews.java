@@ -4,13 +4,16 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 从完整状态生成对外视角。这是隐藏信息的唯一出口：
  * <ul>
  *   <li>公共视角：只有手牌张数、亮出的牌、花、牌河、剩余张数；暗杠只显示是暗杠；
- *       不含牌墙、任何人的暗牌、刚摸到的牌和谁能吃碰胡。本局结束后才亮出所有人的手牌。</li>
+ *       不含牌墙、任何人的暗牌、刚摸到的牌和谁能吃碰胡。本局结束后只亮胡家的手牌和暗杠，
+ *       没胡的人（包括荒庄时所有人）的牌一直不公开。</li>
  *   <li>私有视角：只含这一个座位自己的手牌、听牌和可选操作。</li>
  * </ul>
  */
@@ -56,7 +59,7 @@ public final class MahjongViews {
         private List<Integer> discards = new ArrayList<>();
         private boolean qiao;
         private boolean autoPlay;
-        /** 只在本局结束后给出 */
+        /** 只在本局结束后、并且这个座位胡了才给出 */
         private List<Integer> hand;
     }
 
@@ -88,6 +91,8 @@ public final class MahjongViews {
         /** 手牌（已排序，不含刚摸到的那张） */
         private List<Integer> hand = new ArrayList<>();
         private Integer drawnTile;
+        /** 自己暗杠的牌（公共视角里暗杠不显示牌面，自己要知道杠的是什么），按副露顺序 */
+        private List<Integer> concealedKongs = new ArrayList<>();
         private List<Integer> waits = new ArrayList<>();
         private boolean qiao;
         private boolean autoPlay;
@@ -99,6 +104,10 @@ public final class MahjongViews {
 
     public static PublicRound publicView(MahjongRound round, List<MahjongEvent> events) {
         boolean finished = round.isFinished();
+        Set<Integer> winners = new HashSet<>();
+        if (finished && round.getResult() != null) {
+            round.getResult().getWins().forEach(win -> winners.add(win.getSeat()));
+        }
         PublicRound view = new PublicRound();
         view.setMode(round.getMode() != null ? round.getMode().name() : null);
         view.setRoundNo(round.getRoundNo());
@@ -117,6 +126,7 @@ public final class MahjongViews {
         view.setStep(round.getStep());
         view.setDeadline(round.getDeadline());
         for (MahjongPlayer player : round.getPlayers()) {
+            boolean revealed = winners.contains(player.getSeat());
             PublicSeat seat = new PublicSeat();
             seat.setSeat(player.getSeat());
             seat.setHandCount(player.getHand().size());
@@ -129,14 +139,14 @@ public final class MahjongViews {
                 publicMeld.setClaimedTile(meld.getClaimedTile());
                 boolean concealed = meld.getType() == MahjongMeld.Type.AN_GANG;
                 publicMeld.setConcealed(concealed);
-                publicMeld.setTiles(concealed && !finished ? null : new ArrayList<>(meld.getTiles()));
+                publicMeld.setTiles(concealed && !revealed ? null : new ArrayList<>(meld.getTiles()));
                 seat.getMelds().add(publicMeld);
             }
             seat.setFlowers(new ArrayList<>(player.getFlowers()));
             seat.setDiscards(new ArrayList<>(player.getDiscards()));
             seat.setQiao(player.isQiao());
             seat.setAutoPlay(player.isAutoPlay());
-            if (finished) {
+            if (revealed) {
                 seat.setHand(sorted(player.getHand()));
             }
             view.getSeats().add(seat);
@@ -168,6 +178,11 @@ public final class MahjongViews {
             view.setDrawnTile(drawn);
         }
         view.setHand(sorted(hand));
+        for (MahjongMeld meld : player.getMelds()) {
+            if (meld.getType() == MahjongMeld.Type.AN_GANG) {
+                view.getConcealedKongs().add(meld.firstTile());
+            }
+        }
         view.setWaits(MahjongEngine.waits(round, seat));
         view.setOptions(MahjongEngine.options(round, seat));
         if (events != null) {

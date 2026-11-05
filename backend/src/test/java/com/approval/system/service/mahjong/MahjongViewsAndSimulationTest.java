@@ -79,6 +79,38 @@ class MahjongViewsAndSimulationTest {
     }
 
     @Test
+    void afterTheRoundOnlyWinnersShowTheirHands() {
+        MahjongRound round = MahjongTestSupport.round(MahjongModeEnum.BAIDA, 3, "1s 2s 3s 4s");
+        round.setWild(tile("5m"));
+        MahjongTestSupport.meld(round, 2, MahjongMeld.Type.AN_GANG, "9999p", null);
+        MahjongTestSupport.hand(round, 2, "123m 456s 1z");
+        MahjongTestSupport.hand(round, 1, "123m 789s 111z 99p 46p");
+        turnWithDraw(round, 0, "147m 147s 28p 234z 9s 8p", "5p");
+
+        MahjongEngine.apply(round, 0, MahjongAction.discard(tile("5p")));
+        MahjongEngine.apply(round, 1, MahjongAction.of(MahjongActionType.HU));
+
+        MahjongViews.PublicRound view = MahjongViews.publicView(round, round.drainEvents());
+        assertThat(view.getSeats().get(1).getHand()).as("胡家亮牌").isNotEmpty();
+        assertThat(view.getSeats().get(0).getHand()).as("放炮者不亮牌").isNull();
+        assertThat(view.getSeats().get(2).getHand()).isNull();
+        assertThat(view.getSeats().get(2).getMelds().get(0).getTiles()).as("没胡的人暗杠不亮").isNull();
+    }
+
+    @Test
+    void drawGameRevealsNobody() {
+        MahjongRound round = MahjongTestSupport.round(MahjongModeEnum.QIAOMA, 2, "");
+        turnWithDraw(round, 0, "147m 147s 147p 89m 6s 6p", "2z");
+        MahjongTestSupport.hand(round, 1, "258m 258s 258p 36m 36s");
+
+        MahjongEngine.apply(round, 0, MahjongAction.discard(tile("2z")));
+
+        assertThat(round.getResult().isDrawGame()).isTrue();
+        MahjongViews.publicView(round, List.of()).getSeats()
+                .forEach(seat -> assertThat(seat.getHand()).isNull());
+    }
+
+    @Test
     void concealedKongIsRevealedOnlyAfterRoundEnds() {
         MahjongRound round = MahjongTestSupport.round(MahjongModeEnum.BAIDA, 2, "1s 2s 9p");
         round.setWild(tile("5m"));
@@ -88,6 +120,9 @@ class MahjongViewsAndSimulationTest {
         MahjongViews.PublicMeld meld = MahjongViews.publicView(round, round.drainEvents()).getSeats().get(0).getMelds().get(0);
         assertThat(meld.isConcealed()).isTrue();
         assertThat(meld.getTiles()).isNull();
+        // 自己能在私有视角里看到暗杠的是哪张，别人看不到
+        assertThat(MahjongViews.privateView(round, 0, List.of()).getConcealedKongs()).containsExactly(tile("1m"));
+        assertThat(MahjongViews.privateView(round, 1, List.of()).getConcealedKongs()).isEmpty();
 
         MahjongEngine.apply(round, 0, MahjongAction.of(MahjongActionType.HU));
         MahjongViews.PublicRound finished = MahjongViews.publicView(round, round.drainEvents());
