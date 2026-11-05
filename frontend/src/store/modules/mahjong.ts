@@ -29,6 +29,7 @@ const EVENT_FLASH: Record<string, string> = {
   AN_GANG: '暗杠',
   QIAO: '敲',
   HU: '胡',
+  FLOWER: '补花',
   AUTO_ON: '托管'
 }
 

@@ -137,6 +137,8 @@ export interface MahjongPrivateHand {
   /** 已排序，不含刚摸到的那张 */
   hand: number[]
   drawnTile?: number | null
+  /** 自己暗杠的牌，按副露顺序 */
+  concealedKongs?: number[]
   waits?: number[]
   qiao?: boolean
   autoPlay?: boolean
@@ -305,4 +307,35 @@ export function tileName(tile: number | null | undefined): string {
 
 export function tileNames(tiles: number[] | null | undefined): string {
   return (tiles ?? []).map(tileName).join('、')
+}
+
+// ------------------------------------------------------------------ 牌桌方位
+
+/** 牌桌上的方位：自己永远在下方，出牌顺序是 下 → 右 → 上 → 左 */
+export type TableSide = 'bottom' | 'right' | 'top' | 'left'
+
+const SIDES_BY_COUNT: Record<number, TableSide[]> = {
+  2: ['bottom', 'top'],
+  3: ['bottom', 'right', 'left'],
+  4: ['bottom', 'right', 'top', 'left']
+}
+
+/** seat 坐在 viewer 看来的哪一边；viewer 不在桌上时以 0 号位为下方 */
+export function sideOfSeat(seat: number, viewer: number | null | undefined, seatCount: number): TableSide {
+  const sides = SIDES_BY_COUNT[seatCount] ?? SIDES_BY_COUNT[4]
+  const base = viewer ?? 0
+  return sides[((seat - base) % seatCount + seatCount) % seatCount] ?? 'top'
+}
+
+/** 每一边的牌顺时针转多少度，让牌头朝向桌子中间 */
+export const SIDE_ROTATION: Record<TableSide, 0 | 90 | 180 | 270> = {
+  bottom: 0,
+  right: 270,
+  top: 0,
+  left: 90
+}
+
+/** 庄家是东，按出牌顺序依次南、西、北 */
+export function seatWind(seat: number, dealer: number, seatCount: number): string {
+  return ['东', '南', '西', '北'][((seat - dealer) % seatCount + seatCount) % seatCount]
 }

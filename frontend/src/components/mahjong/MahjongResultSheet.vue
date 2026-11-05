@@ -103,7 +103,7 @@ const title = computed(() => {
   if (result.wins.length > 1) return '一炮多响'
   const win = result.wins[0]
   if (!win) return '本局结束'
-  return `${props.seatName(win.seat)}${win.selfDraw ? '自摸' : '胡了'}`
+  return `${props.seatName(win.seat)} ${win.selfDraw ? '自摸' : '胡了'}`
 })
 
 const subtitle = computed(() => {
@@ -111,7 +111,7 @@ const subtitle = computed(() => {
   const roundText = `第 ${props.round.roundNo} 局`
   if (result.drawGame) return `${roundText} · 牌摸完了没人胡，本局不计分，下一局加 1 荒番`
   if (!result.selfDraw && result.discarder !== null && result.discarder !== undefined) {
-    return `${roundText} · ${props.seatName(result.discarder)}点炮`
+    return `${roundText} · ${props.seatName(result.discarder)} 点炮`
   }
   return roundText
 })
@@ -141,7 +141,7 @@ function payText(win: MahjongWin): string {
   if (win.selfDraw) {
     return win.payers.length > 1 ? `其余 ${win.payers.length} 家各付 ${win.payEach}` : `对家付 ${win.payEach}`
   }
-  return `${props.seatName(win.payers[0])}付 ${win.payEach}`
+  return `${props.seatName(win.payers[0])} 付 ${win.payEach}`
 }
 
 function winOf(seat: number): MahjongWin | undefined {

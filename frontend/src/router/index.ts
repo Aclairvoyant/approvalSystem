@@ -10,6 +10,8 @@ declare module 'vue-router' {
     guestOnly?: boolean
     /** 底部导航高亮哪个标签 */
     tab?: 'home' | 'daily' | 'applications' | 'game' | 'profile'
+    /** 全屏页面（麻将牌桌），不显示底部导航 */
+    immersive?: boolean
   }
 }
 
@@ -56,7 +58,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'game', name: 'MobileGameLobby', component: () => import('@/pages/mobile/GameLobby.vue'), meta: { tab: 'game' } },
       { path: 'game/room/:id', name: 'MobileGameRoom', component: () => import('@/pages/mobile/GameRoom.vue'), meta: { tab: 'game' } },
       { path: 'gobang/room/:id', name: 'MobileGobangRoom', component: () => import('@/pages/mobile/GobangRoom.vue'), meta: { tab: 'game' } },
-      { path: 'mahjong/room/:id', name: 'MobileMahjongRoom', component: () => import('@/pages/mobile/MahjongRoom.vue'), meta: { tab: 'game' } },
+      { path: 'mahjong/room/:id', name: 'MobileMahjongRoom', component: () => import('@/pages/mobile/MahjongRoom.vue'), meta: { tab: 'game', immersive: true } },
       { path: 'game/tasks', name: 'MobileGameTasks', component: () => import('@/pages/mobile/GameTasks.vue'), meta: { tab: 'game' } },
     ],
   },

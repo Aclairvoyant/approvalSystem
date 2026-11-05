@@ -7,7 +7,7 @@
       </router-view>
     </main>
 
-    <nav class="mobile-nav">
+    <nav v-if="!route.meta.immersive" class="mobile-nav">
       <router-link
         v-for="tab in tabs"
         :key="tab.name"

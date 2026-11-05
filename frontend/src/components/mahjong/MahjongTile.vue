@@ -1,19 +1,14 @@
 <template>
   <component
     :is="interactive ? 'button' : 'span'"
-    class="mj-tile"
+    class="mj-slot"
     :class="[
-      `mj-tile--${size}`,
-      `ink-${kind}`,
+      `mj-size-${size}`,
+      `mj-rot-${rotate}`,
       {
-        'is-back': isBack,
+        'is-stand': stand,
         'is-selected': selected,
-        'is-wild': wild && !isBack,
-        'is-dim': dim,
-        'is-latest': latest,
-        'is-marked': marked,
-        'is-white': tile === WHITE_DRAGON,
-        'is-fa': tile === GREEN_DRAGON
+        'is-dim': dim
       }
     ]"
     :type="interactive ? 'button' : undefined"
@@ -21,11 +16,26 @@
     :aria-label="isBack ? '牌背' : label"
     :aria-pressed="interactive ? selected : undefined"
   >
-    <template v-if="!isBack">
-      <span class="mj-glyph">{{ glyph }}</span>
-      <span v-if="suit" class="mj-suit">{{ suit }}</span>
-      <span v-if="wild" class="mj-wild" aria-hidden="true">搭</span>
-    </template>
+    <span
+      class="mj-tile"
+      :class="[
+        `ink-${kind}`,
+        {
+          'is-back': isBack,
+          'is-wild': wild && !isBack,
+          'is-latest': latest,
+          'is-marked': marked,
+          'is-white': tile === WHITE_DRAGON,
+          'is-fa': tile === GREEN_DRAGON
+        }
+      ]"
+    >
+      <template v-if="!isBack">
+        <span class="mj-glyph">{{ glyph }}</span>
+        <span v-if="suit" class="mj-suit">{{ suit }}</span>
+        <span v-if="wild" class="mj-wild" aria-hidden="true">搭</span>
+      </template>
+    </span>
   </component>
 </template>
 
@@ -39,19 +49,28 @@ const WHITE_DRAGON = 47
 const props = withDefaults(defineProps<{
   /** 不传或 null 表示牌背 */
   tile?: number | null
-  /** xs 牌河 / 花，sm 副露，md 结算，hand 手牌（宽度由父元素的 --tile-w 决定） */
-  size?: 'xs' | 'sm' | 'md' | 'hand'
+  /**
+   * xs 牌河，sm 别人的副露 / 亮牌，md 结算，lg 出牌特写，
+   * hand 自己的手牌、meld 自己的副露（宽度分别取父元素的 --hand-tile-w / --meld-tile-w）
+   */
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'hand' | 'meld'
+  /** 顺时针旋转角度：左右两家的牌横着放 */
+  rotate?: 0 | 90 | 180 | 270
+  /** 立着的牌（别人手里的暗牌），比平放的牌更窄更高 */
+  stand?: boolean
   selected?: boolean
   wild?: boolean
   dim?: boolean
   latest?: boolean
-  /** 可敲的牌：底部加一道主色线 */
+  /** 可敲的牌：底部加一道高亮线 */
   marked?: boolean
   interactive?: boolean
   disabled?: boolean
 }>(), {
   tile: null,
   size: 'sm',
+  rotate: 0,
+  stand: false,
   selected: false,
   wild: false,
   dim: false,
@@ -74,78 +93,127 @@ const label = computed(() => {
 
 <style scoped>
 /*
- * 牌面：象牙色底 + 发丝边，底边加厚表现牌的厚度（不用投影）。
- * 万、条、筒、花各用一种低饱和墨色，只在牌面上使用，界面其他地方仍然只用 --accent。
+ * 一张牌 = 外层占位（决定排版尺寸，横放时宽高互换）+ 内层牌身（绝对定位居中、按角度旋转）。
+ * 牌身：象牙色牌面，底边一条玉绿色表示牌的厚度；牌背整面玉绿。
  */
-.mj-tile {
-  --tile-face: #fbf8f1;
-  --tile-rule: #d3cbb9;
-  --tile-edge: #c4b99f;
-  --tile-back: #3f6a5c;
-  --tile-back-edge: #2c4d42;
-  --ink-wan: #a8281f;
-  --ink-tiao: #1f6a45;
+.mj-slot {
+  --tile-w: 20px;
+  --tile-h: calc(var(--tile-w) * 1.36);
+  --tile-face: #fffcf3;
+  --tile-face-2: #f1e9d4;
+  --tile-rule: #d6cbb0;
+  --tile-jade: #2f8c65;
+  --tile-jade-dark: #1f6248;
+  --tile-jade-light: #55b98d;
+  --ink-wan: #b42a1f;
+  --ink-tiao: #1c6b44;
   --ink-tong: #1f4c8a;
-  --ink-flower: #87561a;
-  --tile-w: 22px;
+  --ink-honor: #1f2329;
+  --ink-flower: #8a5617;
+  --mark: #f6c453;
 
   position: relative;
-  display: inline-flex;
-  flex-direction: column;
+  display: inline-block;
   flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
   width: var(--tile-w);
-  height: calc(var(--tile-w) * 1.36);
+  height: var(--tile-h);
   margin: 0;
   padding: 0;
-  border: 1px solid var(--tile-rule);
-  border-bottom: 3px solid var(--tile-edge);
-  border-radius: 4px;
-  background: var(--tile-face);
-  color: var(--ink);
+  border: 0;
+  background: none;
   font-family: var(--font-sans);
   line-height: 1;
+  vertical-align: bottom;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
-  transition: transform 0.12s ease-out, opacity 0.12s ease-out;
+  transition: transform 0.14s ease-out, opacity 0.14s ease-out;
 }
 
-button.mj-tile {
+button.mj-slot {
   cursor: pointer;
+  touch-action: manipulation;
 }
 
-button.mj-tile:disabled {
+button.mj-slot:disabled {
   cursor: default;
 }
 
-.mj-tile--xs {
+.mj-size-xs {
   --tile-w: 17px;
-  border-bottom-width: 2px;
-  border-radius: 3px;
 }
 
-.mj-tile--sm {
-  --tile-w: 21px;
-  border-bottom-width: 2px;
+.mj-size-sm {
+  --tile-w: 20px;
 }
 
-.mj-tile--md {
+.mj-size-md {
   --tile-w: 28px;
 }
 
-.mj-tile--hand {
+.mj-size-lg {
+  --tile-w: 46px;
+}
+
+.mj-size-hand {
   --tile-w: var(--hand-tile-w, 26px);
+}
+
+.mj-size-meld {
+  --tile-w: var(--meld-tile-w, 20px);
+}
+
+/* 立着的牌：窄而高，看到的是牌背 */
+.mj-slot.is-stand {
+  --tile-h: calc(var(--tile-w) * 1.5);
+}
+
+/* 横放：占位宽高互换 */
+.mj-rot-90,
+.mj-rot-270 {
+  width: var(--tile-h);
+  height: var(--tile-w);
+}
+
+.mj-tile {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: var(--tile-w);
+  height: var(--tile-h);
+  border: 1px solid var(--tile-rule);
+  border-bottom: max(2px, calc(var(--tile-w) * 0.13)) solid var(--tile-jade);
+  border-radius: max(2px, calc(var(--tile-w) * 0.14));
+  background: linear-gradient(180deg, var(--tile-face) 0%, var(--tile-face) 55%, var(--tile-face-2) 100%);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
+  color: var(--ink-honor);
+  transform: translate(-50%, -50%);
+}
+
+.mj-rot-90 .mj-tile {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+.mj-rot-180 .mj-tile {
+  transform: translate(-50%, -50%) rotate(180deg);
+}
+
+.mj-rot-270 .mj-tile {
+  transform: translate(-50%, -50%) rotate(270deg);
 }
 
 .mj-glyph {
   font-size: calc(var(--tile-w) * 0.56);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .mj-suit {
-  margin-top: calc(var(--tile-w) * 0.06);
+  margin-top: calc(var(--tile-w) * 0.05);
   font-size: calc(var(--tile-w) * 0.36);
+  font-weight: 600;
 }
 
 .ink-wan .mj-glyph,
@@ -164,7 +232,7 @@ button.mj-tile:disabled {
 }
 
 .ink-wind .mj-glyph {
-  font-size: calc(var(--tile-w) * 0.62);
+  font-size: calc(var(--tile-w) * 0.64);
 }
 
 .ink-dragon .mj-glyph,
@@ -173,7 +241,7 @@ button.mj-tile:disabled {
   font-size: calc(var(--tile-w) * 0.6);
 }
 
-/* 中发白分开上色：中红、发绿，白是空框 */
+/* 中发白：中红、发绿，白是空框 */
 .ink-dragon .mj-glyph {
   color: var(--ink-wan);
 }
@@ -189,18 +257,28 @@ button.mj-tile:disabled {
   font-size: calc(var(--tile-w) * 0.42);
 }
 
-.is-back {
-  border-color: var(--tile-back-edge);
-  background: var(--tile-back);
+.mj-tile.is-back {
+  border-color: var(--tile-jade-dark);
+  border-bottom-color: var(--tile-jade-dark);
+  background: linear-gradient(180deg, var(--tile-jade-light) 0%, var(--tile-jade) 60%, var(--tile-jade-dark) 100%);
+}
+
+/* 立着的牌背：顶上一道亮边表示牌的上沿 */
+.is-stand .mj-tile.is-back {
+  border-bottom-width: max(2px, calc(var(--tile-w) * 0.2));
+  border-top: max(2px, calc(var(--tile-w) * 0.16)) solid #f4efe0;
 }
 
 .is-selected {
-  transform: translateY(-8px);
-  border-color: var(--accent);
+  transform: translateY(-10px);
 }
 
-.is-wild {
-  border-color: var(--accent);
+.is-selected .mj-tile {
+  box-shadow: 0 0 0 2px var(--mark), 0 6px 10px rgba(0, 0, 0, 0.3);
+}
+
+.mj-tile.is-wild {
+  box-shadow: inset 0 0 0 1.5px var(--accent), 0 1px 1px rgba(0, 0, 0, 0.18);
 }
 
 .mj-wild {
@@ -216,33 +294,32 @@ button.mj-tile:disabled {
   line-height: 1;
 }
 
-/* 最小号的牌放不下角标，只留主色边框 */
-.mj-tile--xs .mj-wild {
+/* 最小号的牌放不下角标，只留内描边 */
+.mj-size-xs .mj-wild {
   display: none;
 }
 
 .is-dim {
-  opacity: 0.42;
+  opacity: 0.45;
 }
 
-.is-latest {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+.mj-tile.is-latest {
+  box-shadow: 0 0 0 2px var(--mark), 0 0 10px rgba(246, 196, 83, 0.8);
 }
 
-.is-marked::after {
+.mj-tile.is-marked::after {
   position: absolute;
   right: 3px;
   bottom: 2px;
   left: 3px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--accent);
+  height: 3px;
+  border-radius: 2px;
+  background: var(--mark);
   content: '';
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mj-tile {
+  .mj-slot {
     transition: none;
   }
 }
